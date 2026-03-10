@@ -1,0 +1,4 @@
+# Migrations versions directory
+# Alembic will create migration files here.
+# Initial migration is generated after running:
+#   make db-revision MSG="initial schema"

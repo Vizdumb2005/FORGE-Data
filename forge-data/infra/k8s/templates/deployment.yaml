@@ -1,0 +1,122 @@
+{{/*
+────────────────────────────────────────────────────────────────────────────────
+FORGE Data — Kubernetes Deployment Templates (scaffold)
+Full implementation requires Helm chart dependency resolution for PostgreSQL,
+Redis, and MinIO. This scaffold shows the web and api deployments.
+────────────────────────────────────────────────────────────────────────────────
+*/}}
+
+---
+# ── Web Deployment ─────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-web
+  labels:
+    app.kubernetes.io/name: forge-web
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: forge-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: forge-web
+    spec:
+      containers:
+        - name: web
+          image: "{{ .Values.image.registry }}/{{ .Values.image.web.repository }}:{{ .Values.image.web.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: {{ .Values.env.NODE_ENV | quote }}
+            - name: NEXT_PUBLIC_API_URL
+              value: "/api"
+          resources:
+            {{- toYaml .Values.resources.web | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+---
+# ── API Deployment ─────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-api
+  labels:
+    app.kubernetes.io/name: forge-api
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: forge-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: forge-api
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.image.registry }}/{{ .Values.image.api.repository }}:{{ .Values.image.api.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-secrets
+          resources:
+            {{- toYaml .Values.resources.api | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+
+---
+# ── Services ───────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-web
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.web.port }}
+      targetPort: 3000
+  selector:
+    app.kubernetes.io/name: forge-web
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-api
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.api.port }}
+      targetPort: 8000
+  selector:
+    app.kubernetes.io/name: forge-api

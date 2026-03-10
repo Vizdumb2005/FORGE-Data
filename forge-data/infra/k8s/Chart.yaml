@@ -1,0 +1,16 @@
+apiVersion: v2
+name: forge-data
+description: FORGE Data — self-hosted data intelligence platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - data
+  - analytics
+  - ai
+  - jupyter
+  - mlflow
+home: https://github.com/your-org/forge-data
+maintainers:
+  - name: FORGE Data Contributors
+    email: maintainers@forge-data.dev

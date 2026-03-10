@@ -1,0 +1,158 @@
+"""FORGE Data API — FastAPI application entry point."""
+
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from sqlalchemy import text
+
+from app.config import settings
+from app.core.exceptions import ForgeException
+from app.core.middleware import AuditMiddleware, RequestLoggingMiddleware
+from app.core.redis import close_redis, ping_redis
+from app.routers import (
+    ai,
+    auth,
+    cells,
+    connectors,
+    datasets,
+    execute,
+    experiments,
+    health,
+    users,
+    workspaces,
+)
+
+logger = logging.getLogger(__name__)
+
+logging.basicConfig(
+    level=logging.DEBUG if settings.is_development else logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+)
+
+
+# ── Startup / shutdown ────────────────────────────────────────────────────────
+
+async def _check_database() -> None:
+    from app.database import engine
+
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("Database connection OK")
+    except Exception as exc:
+        logger.error("Database connection FAILED: %s", exc)
+
+
+async def _ensure_minio_bucket() -> None:
+    try:
+        from minio import Minio
+        from minio.error import S3Error  # noqa: F401
+
+        client = Minio(
+            settings.minio_endpoint,
+            access_key=settings.minio_access_key,
+            secret_key=settings.minio_secret_key,
+            secure=settings.minio_use_ssl,
+        )
+        if not client.bucket_exists(settings.minio_bucket):
+            client.make_bucket(settings.minio_bucket)
+            logger.info("Created MinIO bucket: %s", settings.minio_bucket)
+        else:
+            logger.info("MinIO bucket present: %s", settings.minio_bucket)
+    except Exception as exc:
+        logger.warning("MinIO initialisation warning (non-fatal): %s", exc)
+
+
+async def _check_redis() -> None:
+    ok = await ping_redis()
+    if ok:
+        logger.info("Redis connection OK")
+    else:
+        logger.warning("Redis connection FAILED (rate limiting and token revocation may not work)")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # noqa: ARG001
+    logger.info("Starting FORGE Data API v%s", app.version)
+    await _check_database()
+    await _ensure_minio_bucket()
+    await _check_redis()
+    yield
+    await close_redis()
+    logger.info("FORGE Data API shutdown complete")
+
+
+# ── Application factory ────────────────────────────────────────────────────────
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="FORGE Data API",
+        description=(
+            "Self-hosted data intelligence platform. "
+            "Interactive data grids, conversational AI analysis, BYOK LLM support."
+        ),
+        version="0.1.0",
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
+        openapi_url="/api/openapi.json",
+        lifespan=lifespan,
+    )
+
+    # ── Rate limiter (slowapi) ────────────────────────────────────────────
+    app.state.limiter = auth.limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    # ── Middleware (order matters — outermost runs first on request) ───────
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["X-Request-ID", "X-Process-Time"],
+    )
+    app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(AuditMiddleware)
+
+    # ── Exception handlers ─────────────────────────────────────────────────
+    @app.exception_handler(ForgeException)
+    async def forge_exception_handler(
+        request: Request, exc: ForgeException  # noqa: ARG001
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail, "code": exc.code},
+        )
+
+    # ── Top-level health endpoint (no auth required) ───────────────────────
+    @app.get(
+        "/api/health",
+        tags=["health"],
+        summary="API liveness probe",
+        response_description="Returns 200 when the API process is alive",
+    )
+    async def root_health():
+        return {"status": "ok", "version": app.version}
+
+    # ── Routers ────────────────────────────────────────────────────────────
+    V1 = "/api/v1"
+    app.include_router(health.router, prefix=V1, tags=["health"])
+    app.include_router(auth.router, prefix=f"{V1}/auth", tags=["auth"])
+    app.include_router(users.router, prefix=f"{V1}/users", tags=["users"])
+    app.include_router(workspaces.router, prefix=f"{V1}/workspaces", tags=["workspaces"])
+    app.include_router(datasets.router, prefix=f"{V1}/datasets", tags=["datasets"])
+    app.include_router(cells.router, prefix=f"{V1}/workspaces", tags=["cells"])
+    app.include_router(execute.router, prefix=f"{V1}/workspaces", tags=["execute"])
+    app.include_router(ai.router, prefix=f"{V1}/ai", tags=["ai"])
+    app.include_router(connectors.router, prefix=f"{V1}/connectors", tags=["connectors"])
+    app.include_router(experiments.router, prefix=f"{V1}/experiments", tags=["experiments"])
+
+    return app
+
+
+app = create_app()

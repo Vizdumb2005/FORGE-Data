@@ -1,0 +1,62 @@
+version: '3.9'
+
+# Production overrides — apply with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: ../../infra/docker/Dockerfile.web
+      target: production
+    environment:
+      - NODE_ENV=production
+    restart: always
+    # Remove volume mounts in production (baked into image)
+    volumes: []
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: ../../infra/docker/Dockerfile.api
+      target: production
+    environment:
+      - APP_ENV=production
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+    restart: always
+    volumes: []
+
+  jupyter:
+    environment:
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN}
+    command: >
+      start-notebook.sh
+      --NotebookApp.token=${JUPYTER_TOKEN}
+    restart: always
+
+  mlflow:
+    restart: always
+
+  postgres:
+    # In production, use a managed DB. This keeps the service but removes dev port exposure.
+    ports: []
+    restart: always
+
+  redis:
+    ports: []
+    restart: always
+
+  minio:
+    ports:
+      - "9000:9000"
+      # Do not expose console port in production
+    restart: always
+
+  nginx:
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/certs:/etc/nginx/certs:ro
+    restart: always

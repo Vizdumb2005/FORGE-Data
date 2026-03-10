@@ -1,0 +1,113 @@
+# Default values for the FORGE Data Helm chart.
+# Override with: helm install forge-data . -f my-values.yaml
+
+replicaCount: 1
+
+image:
+  registry: ghcr.io
+  pullPolicy: IfNotPresent
+  web:
+    repository: your-org/forge-data-web
+    tag: "latest"
+  api:
+    repository: your-org/forge-data-api
+    tag: "latest"
+
+service:
+  type: ClusterIP
+  web:
+    port: 3000
+  api:
+    port: 8000
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  hosts:
+    - host: forge-data.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: web
+        - path: /api
+          pathType: Prefix
+          service: api
+        - path: /jupyter
+          pathType: Prefix
+          service: jupyter
+
+resources:
+  web:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  api:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  jupyter:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+# PostgreSQL — disable to use an external managed DB
+postgresql:
+  enabled: true
+  auth:
+    database: forge
+    username: forge
+    password: forge  # Override in production!
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+
+# Redis
+redis:
+  enabled: true
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 5Gi
+
+# MinIO
+minio:
+  enabled: true
+  auth:
+    rootUser: forge
+    rootPassword: forgedata123  # Override in production!
+  persistence:
+    enabled: true
+    size: 50Gi
+
+# MLflow
+mlflow:
+  enabled: true
+
+# Environment — these map to your .env variables
+env:
+  JWT_SECRET: "change-me-in-production"
+  JWT_ALGORITHM: "HS256"
+  JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+  JWT_REFRESH_TOKEN_EXPIRE_DAYS: "30"
+  NODE_ENV: "production"
+  APP_ENV: "production"
+  OPENAI_API_KEY: ""
+  ANTHROPIC_API_KEY: ""
+  OLLAMA_BASE_URL: ""
+
+# Secrets — use a Kubernetes Secret or external secrets manager in production
+existingSecret: ""

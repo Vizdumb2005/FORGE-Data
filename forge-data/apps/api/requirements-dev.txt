@@ -1,0 +1,22 @@
+# Development and testing dependencies — not installed in production image.
+# Install with: pip install -r requirements.txt -r requirements-dev.txt
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+httpx==0.28.1          # async test client
+anyio[trio]==4.7.0
+aiosqlite==0.20.0      # optional SQLite backend for lightweight unit tests
+
+# ── Type checking ─────────────────────────────────────────────────────────────
+mypy==1.13.0
+types-passlib==1.7.7.20240819
+types-python-jose==3.3.4.20240106
+
+# ── Linting / formatting ──────────────────────────────────────────────────────
+ruff==0.8.4
+
+# ── Debug utilities ───────────────────────────────────────────────────────────
+ipython==8.30.0
+rich==13.9.4

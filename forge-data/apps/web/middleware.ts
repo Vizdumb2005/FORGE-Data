@@ -1,0 +1,39 @@
+import { NextRequest, NextResponse } from "next/server";
+
+const PUBLIC_PATHS = ["/login", "/register", "/api/health"];
+const AUTH_PATHS = ["/login", "/register"];
+
+export function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+
+  // Allow public assets and Next.js internals
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/favicon") ||
+    pathname.startsWith("/icons")
+  ) {
+    return NextResponse.next();
+  }
+
+  const token = req.cookies.get("forge_access_token")?.value;
+  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+  const isAuthPath = AUTH_PATHS.some((p) => pathname.startsWith(p));
+
+  // Logged-in users shouldn't revisit /login or /register
+  if (token && isAuthPath) {
+    return NextResponse.redirect(new URL("/dashboard", req.url));
+  }
+
+  // Protected routes require a token
+  if (!token && !isPublic) {
+    const loginUrl = new URL("/login", req.url);
+    loginUrl.searchParams.set("next", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+};
