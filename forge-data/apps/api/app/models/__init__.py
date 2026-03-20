@@ -6,6 +6,8 @@ from app.models.data_quality import DataQualityReport, DataQualityRuleset
 from app.models.dataset import Dataset, SourceType
 from app.models.dataset_version import DatasetVersion
 from app.models.experiment import Experiment, ExperimentRun
+from app.models.metric import Metric
+from app.models.pipeline import Pipeline, PipelineRun, PipelineStatus, ScheduledPipeline
 from app.models.user import LLMProvider, User
 from app.models.workspace import MemberRole, Workspace, WorkspaceMember
 
@@ -21,7 +23,12 @@ __all__ = [
     "Experiment",
     "ExperimentRun",
     "LLMProvider",
+    "Metric",
     "MemberRole",
+    "Pipeline",
+    "PipelineRun",
+    "PipelineStatus",
+    "ScheduledPipeline",
     "SourceType",
     "User",
     "Workspace",
