@@ -374,6 +374,56 @@ async def update_api_keys(
     return MessageResponse(message="API keys updated")
 
 
+@router.get(
+    "/me/provider-config",
+    summary="Get universal provider JSON configuration for editing",
+)
+async def get_provider_config(current_user: CurrentUser) -> dict:
+    providers = provider_registry.list_for_user(current_user)
+    provider_keys = current_user.llm_api_keys or {}
+    provider_settings = current_user.llm_provider_config or {}
+    global_settings = (
+        provider_settings.get("__settings__", {})
+        if isinstance(provider_settings, dict)
+        else {}
+    )
+    if not isinstance(global_settings, dict):
+        global_settings = {}
+
+    config_payload: dict[str, dict] = {}
+    for provider in providers:
+        provider_id = provider["id"]
+        p_settings = (
+            provider_settings.get(provider_id, {})
+            if isinstance(provider_settings, dict)
+            else {}
+        )
+        if not isinstance(p_settings, dict):
+            p_settings = {}
+        config_payload[provider_id] = {
+            "api_key": "[[ENCRYPTED_EXISTS]]" if provider_keys.get(provider_id) else "",
+            "default_model": p_settings.get("default_model", provider["default_model"]),
+            "base_url": p_settings.get("base_url", ""),
+            "model_path": p_settings.get("model_path", ""),
+            "params": p_settings.get("runtime_options", {}),
+        }
+
+    local_candidate = "ollama" if "ollama" in config_payload else ""
+    return {
+        "providers": config_payload,
+        "settings": {
+            "active_provider": current_user.preferred_llm_provider or local_candidate,
+            "fallback_order": global_settings.get(
+                "fallback_order",
+                [p["id"] for p in providers if p.get("local")]
+                + [p["id"] for p in providers if not p.get("local")],
+            ),
+            "timeout": int(global_settings.get("timeout", 30)),
+            "retry_attempts": int(global_settings.get("retry_attempts", 3)),
+        },
+    }
+
+
 # =============================================================================
 # 8. POST /me/api-keys/test
 # =============================================================================

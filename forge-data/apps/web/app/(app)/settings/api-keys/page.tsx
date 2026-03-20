@@ -1,307 +1,175 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { KeyRound } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
-import type { AIProviderOption } from "@/types";
 
-type ProviderFormState = {
-  apiKey: string;
-  baseUrl: string;
-  modelPath: string;
-  runtimeOptionsText: string;
-};
-
-function defaultRuntimeText() {
-  return JSON.stringify({ temperature: 0.2 }, null, 2);
-}
+const PLACEHOLDER_KEY = "[[ENCRYPTED_EXISTS]]";
 
 export default function ApiKeysPage() {
-  const { user, fetchMe } = useAuth();
-  const [providers, setProviders] = useState<AIProviderOption[]>([]);
-  const [loadingProviders, setLoadingProviders] = useState(true);
-  const [preferredProvider, setPreferredProvider] = useState<string>(
-    user?.preferred_llm_provider ?? "ollama",
-  );
-  const [forms, setForms] = useState<Record<string, ProviderFormState>>({});
+  const { fetchMe } = useAuth();
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState<Record<string, boolean>>({});
-  const [status, setStatus] = useState<Record<string, "ok" | "err" | null>>({});
-  const [testStatus, setTestStatus] = useState<Record<string, string>>({});
-  const [globalError, setGlobalError] = useState<string | null>(null);
-
-  const sortedProviders = useMemo(
-    () =>
-      [...providers].sort((a, b) => {
-        const pa = a.priority ?? 999;
-        const pb = b.priority ?? 999;
-        return pa - pb;
-      }),
-    [providers],
-  );
+  const [testingProvider, setTestingProvider] = useState<string>("");
+  const [jsonText, setJsonText] = useState("");
+  const [status, setStatus] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [providerIds, setProviderIds] = useState<string[]>([]);
 
   useEffect(() => {
-    setPreferredProvider(user?.preferred_llm_provider ?? "ollama");
-  }, [user?.preferred_llm_provider]);
-
-  useEffect(() => {
-    const loadProviders = async () => {
-      setLoadingProviders(true);
-      setGlobalError(null);
+    const load = async () => {
+      setLoading(true);
+      setError("");
       try {
-        const resp = await api.get<AIProviderOption[]>("/api/v1/ai/providers");
-        setProviders(resp.data);
-        const nextForms: Record<string, ProviderFormState> = {};
-        for (const provider of resp.data) {
-          const isLocal = Boolean(provider.local);
-          nextForms[provider.id] = {
-            apiKey: "",
-            baseUrl: provider.id === "ollama" ? "http://localhost:11434" : "",
-            modelPath: "",
-            runtimeOptionsText: isLocal ? defaultRuntimeText() : "{}",
-          };
-        }
-        setForms(nextForms);
-      } catch {
-        setGlobalError("Failed to load AI providers. Please refresh.");
+        const resp = await api.get("/api/v1/auth/me/provider-config");
+        setJsonText(JSON.stringify(resp.data, null, 2));
+        setProviderIds(Object.keys(resp.data?.providers ?? {}));
+      } catch (e) {
+        setError("Failed to load provider configuration JSON.");
       } finally {
-        setLoadingProviders(false);
+        setLoading(false);
       }
     };
-    void loadProviders();
+    void load();
   }, []);
 
-  const updateForm = (providerId: string, patch: Partial<ProviderFormState>) => {
-    setForms((prev) => ({
-      ...prev,
-      [providerId]: {
-        ...(prev[providerId] ?? {
-          apiKey: "",
-          baseUrl: "",
-          modelPath: "",
-          runtimeOptionsText: "{}",
-        }),
-        ...patch,
-      },
-    }));
-  };
-
-  const testProvider = async (providerId: string) => {
-    setTesting((s) => ({ ...s, [providerId]: true }));
-    setTestStatus((s) => ({ ...s, [providerId]: "" }));
+  const parseConfig = () => {
     try {
-      const form = forms[providerId];
-      const providerSettings: Record<string, any> = {};
-      if (form?.baseUrl?.trim()) providerSettings.base_url = form.baseUrl.trim();
-      if (form?.modelPath?.trim()) providerSettings.model_path = form.modelPath.trim();
-      if (form?.runtimeOptionsText?.trim()) {
-        try {
-          providerSettings.runtime_options = JSON.parse(form.runtimeOptionsText);
-        } catch {
-          throw new Error("Runtime options must be valid JSON before testing.");
-        }
-      }
-
-      await api.patch("/api/v1/auth/me/api-keys", {
-        provider_settings: { [providerId]: providerSettings },
-      });
-
-      const resp = await api.post("/api/v1/auth/me/api-keys/test", { provider: providerId });
-      const valid = Boolean(resp.data?.valid);
-      const error = resp.data?.error;
-      setTestStatus((s) => ({
-        ...s,
-        [providerId]: valid ? "Connection successful." : `Failed: ${error ?? "Unknown error"}`,
-      }));
-    } catch (error) {
-      setTestStatus((s) => ({
-        ...s,
-        [providerId]: error instanceof Error ? error.message : "Failed to test provider.",
-      }));
-    } finally {
-      setTesting((s) => ({ ...s, [providerId]: false }));
+      return JSON.parse(jsonText) as {
+        providers: Record<
+          string,
+          {
+            api_key?: string;
+            default_model?: string;
+            base_url?: string;
+            model_path?: string;
+            params?: Record<string, unknown>;
+          }
+        >;
+        settings?: {
+          active_provider?: string;
+          fallback_order?: string[];
+          timeout?: number;
+          retry_attempts?: number;
+        };
+      };
+    } catch {
+      throw new Error("Config JSON is invalid. Fix syntax and try again.");
     }
   };
 
-  const saveAll = async () => {
+  const saveJsonConfig = async () => {
     setSaving(true);
-    setStatus({});
-    setGlobalError(null);
+    setStatus("");
+    setError("");
     try {
+      const parsed = parseConfig();
+      const providers = parsed.providers ?? {};
       const provider_api_keys: Record<string, string | null> = {};
-      const provider_settings: Record<string, Record<string, any>> = {};
+      const provider_settings: Record<string, Record<string, unknown>> = {};
 
-      for (const provider of sortedProviders) {
-        const form = forms[provider.id];
-        if (!form) continue;
-
-        provider_api_keys[provider.id] = form.apiKey.trim() || null;
-        provider_settings[provider.id] = {};
-        if (form.baseUrl.trim()) provider_settings[provider.id].base_url = form.baseUrl.trim();
-        if (form.modelPath.trim()) provider_settings[provider.id].model_path = form.modelPath.trim();
-        if (form.runtimeOptionsText.trim()) {
-          try {
-            provider_settings[provider.id].runtime_options = JSON.parse(form.runtimeOptionsText);
-          } catch {
-            throw new Error(`Runtime options for ${provider.name} must be valid JSON.`);
-          }
+      for (const [providerId, cfg] of Object.entries(providers)) {
+        const rawKey = (cfg.api_key ?? "").trim();
+        if (!rawKey || rawKey === PLACEHOLDER_KEY) {
+          provider_api_keys[providerId] = null;
+        } else {
+          provider_api_keys[providerId] = rawKey;
         }
+        provider_settings[providerId] = {
+          default_model: cfg.default_model ?? "",
+          base_url: cfg.base_url ?? "",
+          model_path: cfg.model_path ?? "",
+          runtime_options: cfg.params ?? {},
+        };
       }
+
+      provider_settings.__settings__ = {
+        fallback_order: parsed.settings?.fallback_order ?? [],
+        timeout: parsed.settings?.timeout ?? 30,
+        retry_attempts: parsed.settings?.retry_attempts ?? 3,
+      };
 
       await api.patch("/api/v1/auth/me/api-keys", {
         provider_api_keys,
         provider_settings,
       });
       await api.patch("/api/v1/auth/me", {
-        preferred_llm_provider: preferredProvider,
+        preferred_llm_provider: parsed.settings?.active_provider ?? "ollama",
       });
       await fetchMe();
-      const okStatus: Record<string, "ok"> = { preferred_llm_provider: "ok" };
-      for (const provider of sortedProviders) okStatus[provider.id] = "ok";
-      setStatus(okStatus);
-      setForms((prev) => {
-        const next = { ...prev };
-        for (const key of Object.keys(next)) {
-          next[key] = { ...next[key], apiKey: "" };
-        }
-        return next;
-      });
-    } catch (error) {
-      const errMsg = error instanceof Error ? error.message : "Failed to save AI provider settings.";
-      setGlobalError(errMsg);
-      const errStatus: Record<string, "err"> = { preferred_llm_provider: "err" };
-      for (const provider of sortedProviders) errStatus[provider.id] = "err";
-      setStatus(errStatus);
+      setStatus("Configuration saved.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save configuration.");
     } finally {
       setSaving(false);
     }
   };
 
+  const testProvider = async (providerId: string) => {
+    setTestingProvider(providerId);
+    setStatus("");
+    setError("");
+    try {
+      await saveJsonConfig();
+      const resp = await api.post("/api/v1/auth/me/api-keys/test", { provider: providerId });
+      if (resp.data?.valid) {
+        setStatus(`${providerId}: connection successful.`);
+      } else {
+        setError(`${providerId}: ${resp.data?.error ?? "validation failed"}`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : `Failed to test ${providerId}.`);
+    } finally {
+      setTestingProvider("");
+    }
+  };
+
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <h1 className="mb-6 text-2xl font-semibold text-foreground flex items-center gap-2">
+    <div className="p-6 max-w-4xl mx-auto">
+      <h1 className="mb-4 text-2xl font-semibold text-foreground flex items-center gap-2">
         <KeyRound className="h-6 w-6 text-forge-accent" />
-        AI Provider Configuration
+        Universal AI Provider JSON Config
       </h1>
       <p className="mb-4 text-sm text-forge-muted">
-        Local runtimes are prioritized automatically. Configure local engines first, then optional cloud fallbacks.
+        Edit the full provider config JSON directly. Local providers are checked first, then cloud fallback.
       </p>
 
-      {globalError && <p className="mb-4 text-sm text-red-400">{globalError}</p>}
-
-      {loadingProviders ? (
-        <p className="text-sm text-forge-muted">Loading providers...</p>
+      {loading ? (
+        <p className="text-sm text-forge-muted">Loading configuration...</p>
       ) : (
-        <div className="space-y-4">
-          {sortedProviders.map((provider) => {
-            const form = forms[provider.id] ?? {
-              apiKey: "",
-              baseUrl: "",
-              modelPath: "",
-              runtimeOptionsText: provider.local ? defaultRuntimeText() : "{}",
-            };
-            return (
-              <div key={provider.id} className="rounded-lg border border-forge-border bg-forge-surface p-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <p className="text-sm font-medium text-foreground">{provider.name}</p>
-                  <span className="text-xs text-forge-muted">
-                    {provider.local ? "Local" : "Cloud"} · {provider.configured ? "Configured" : "Not set"}
-                  </span>
-                </div>
+        <>
+          <textarea
+            value={jsonText}
+            onChange={(e) => setJsonText(e.target.value)}
+            rows={26}
+            className="w-full rounded-md border border-forge-border bg-forge-bg px-3 py-3 text-xs font-mono text-foreground focus:border-forge-accent focus:outline-none"
+          />
 
-                <div className="space-y-2">
-                  <div className="text-xs text-forge-muted">
-                    Models: {provider.models.join(", ")}
-                  </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {providerIds.map((providerId) => (
+              <button
+                key={providerId}
+                onClick={() => void testProvider(providerId)}
+                disabled={Boolean(testingProvider) || saving}
+                className="rounded-md border border-forge-border px-3 py-2 text-xs text-foreground hover:bg-forge-border/40 disabled:opacity-50"
+              >
+                {testingProvider === providerId ? `Testing ${providerId}…` : `Test ${providerId}`}
+              </button>
+            ))}
 
-                  {provider.requires_api_key && (
-                    <input
-                      type="password"
-                      value={form.apiKey}
-                      onChange={(e) => updateForm(provider.id, { apiKey: e.target.value })}
-                      placeholder="API key"
-                      className="w-full rounded-md border border-forge-border bg-forge-bg px-3 py-2 text-sm text-foreground placeholder:text-forge-muted focus:border-forge-accent focus:outline-none"
-                    />
-                  )}
-
-                  {(provider.required_settings ?? []).includes("base_url") && (
-                    <input
-                      type="text"
-                      value={form.baseUrl}
-                      onChange={(e) => updateForm(provider.id, { baseUrl: e.target.value })}
-                      placeholder="Base URL (e.g. http://localhost:11434)"
-                      className="w-full rounded-md border border-forge-border bg-forge-bg px-3 py-2 text-sm text-foreground placeholder:text-forge-muted focus:border-forge-accent focus:outline-none"
-                    />
-                  )}
-
-                  {(provider.required_settings ?? []).includes("model_path") && (
-                    <input
-                      type="text"
-                      value={form.modelPath}
-                      onChange={(e) => updateForm(provider.id, { modelPath: e.target.value })}
-                      placeholder="Model path"
-                      className="w-full rounded-md border border-forge-border bg-forge-bg px-3 py-2 text-sm text-foreground placeholder:text-forge-muted focus:border-forge-accent focus:outline-none"
-                    />
-                  )}
-
-                  <textarea
-                    value={form.runtimeOptionsText}
-                    onChange={(e) => updateForm(provider.id, { runtimeOptionsText: e.target.value })}
-                    rows={4}
-                    className="w-full rounded-md border border-forge-border bg-forge-bg px-3 py-2 text-xs font-mono text-foreground placeholder:text-forge-muted focus:border-forge-accent focus:outline-none"
-                    placeholder='{"temperature":0.2}'
-                  />
-
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={() => void testProvider(provider.id)}
-                      disabled={testing[provider.id]}
-                      className="rounded-md border border-forge-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-forge-border/40 disabled:opacity-50"
-                    >
-                      {testing[provider.id] ? "Testing…" : "Test"}
-                    </button>
-                    {status[provider.id] === "ok" && (
-                      <span className="text-xs text-green-400">Saved</span>
-                    )}
-                    {status[provider.id] === "err" && (
-                      <span className="text-xs text-red-400">Save failed</span>
-                    )}
-                  </div>
-
-                  {testStatus[provider.id] && (
-                    <p className="text-xs text-forge-muted">{testStatus[provider.id]}</p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          <div className="rounded-lg border border-forge-border bg-forge-surface p-5">
-            <p className="mb-3 text-sm font-medium text-foreground">Preferred provider</p>
-            <select
-              value={preferredProvider}
-              onChange={(e) => setPreferredProvider(e.target.value)}
-              className="w-full rounded-md border border-forge-border bg-forge-bg px-3 py-2 text-sm text-foreground focus:border-forge-accent focus:outline-none"
-            >
-              {sortedProviders.map((provider) => (
-                <option key={provider.id} value={provider.id}>
-                  {provider.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex justify-end">
             <button
-              onClick={() => void saveAll()}
-              disabled={saving}
-              className="rounded-md bg-forge-accent px-4 py-2 text-sm font-semibold text-forge-bg hover:bg-forge-accent-dim disabled:opacity-50"
+              onClick={() => void saveJsonConfig()}
+              disabled={saving || Boolean(testingProvider)}
+              className="ml-auto rounded-md bg-forge-accent px-4 py-2 text-sm font-semibold text-forge-bg hover:bg-forge-accent-dim disabled:opacity-50"
             >
-              {saving ? "Saving…" : "Save configuration"}
+              {saving ? "Saving…" : "Save JSON configuration"}
             </button>
           </div>
-        </div>
+
+          {status && <p className="mt-3 text-sm text-green-400">{status}</p>}
+          {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+        </>
       )}
     </div>
   );

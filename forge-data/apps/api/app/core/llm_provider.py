@@ -57,6 +57,10 @@ class ProviderRegistry:
         if not self.providers:
             raise ValidationError("No LLM providers are configured. Check llm_providers.json.")
 
+    @property
+    def raw_config(self) -> dict[str, Any]:
+        return dict(self._config)
+
     def _load_config(self, path: Path) -> dict[str, Any]:
         try:
             return json.loads(path.read_text(encoding="utf-8"))
@@ -197,6 +201,7 @@ class LLMProvider:
 
     def __init__(self) -> None:
         self.registry = ProviderRegistry()
+        self._default_global_settings = {"timeout": 30, "retry_attempts": 3}
 
     async def get_client(self, user: User, provider: str | None = None, model: str | None = None) -> LLMClient:
         spec = self._select_provider(user, provider)
@@ -424,6 +429,9 @@ class LLMProvider:
         return response.json().get("message", {}).get("content", "")
 
     def _select_provider(self, user: User, explicit_provider: str | None) -> ProviderSpec:
+        global_settings = self._resolve_global_settings(user)
+        fallback_order = self._resolve_fallback_order(global_settings)
+
         if explicit_provider:
             selected = explicit_provider.lower()
             spec = self.registry.get(selected)
@@ -440,9 +448,19 @@ class LLMProvider:
             except ValidationError:
                 pass
 
+        for provider_id in fallback_order:
+            spec = self.registry.providers.get(provider_id)
+            if spec and spec.local and self.registry.is_configured(user, spec):
+                return spec
+
         for local_spec in self.registry.local_providers():
             if self.registry.is_configured(user, local_spec):
                 return local_spec
+
+        for provider_id in fallback_order:
+            spec = self.registry.providers.get(provider_id)
+            if spec and not spec.local and self.registry.is_configured(user, spec):
+                return spec
 
         for cloud_spec in self.registry.cloud_providers():
             if self.registry.is_configured(user, cloud_spec):
@@ -455,6 +473,27 @@ class LLMProvider:
             f"Checked local providers first ({local_ids}), then cloud providers ({cloud_ids}). "
             "Configure a local runtime (recommended) or add a cloud API key in Settings > AI API Keys."
         )
+
+    def _resolve_global_settings(self, user: User) -> dict[str, Any]:
+        config = user.llm_provider_config or {}
+        if not isinstance(config, dict):
+            return dict(self._default_global_settings)
+        settings = config.get("__settings__", {})
+        if not isinstance(settings, dict):
+            settings = {}
+        merged = dict(self._default_global_settings)
+        merged.update(settings)
+        return merged
+
+    def _resolve_fallback_order(self, global_settings: dict[str, Any]) -> list[str]:
+        configured = global_settings.get("fallback_order")
+        if isinstance(configured, list):
+            normalized = [str(item).lower() for item in configured if str(item).lower() in self.registry.providers]
+            if normalized:
+                return normalized
+        local_ids = [spec.provider_id for spec in self.registry.local_providers()]
+        cloud_ids = [spec.provider_id for spec in self.registry.cloud_providers()]
+        return [*local_ids, *cloud_ids]
 
     def _validate_required_settings(self, spec: ProviderSpec, settings: dict[str, Any], base_url: str | None) -> None:
         missing: list[str] = []
