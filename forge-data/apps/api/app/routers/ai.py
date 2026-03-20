@@ -6,7 +6,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -63,6 +63,8 @@ class ChatRequest(BaseModel):
     workspace_id: str
     message: str = Field(min_length=1)
     history: list[dict[str, str]] = Field(default_factory=list)
+    provider: Literal["openai", "anthropic", "ollama"] | None = None
+    model: str | None = None
 
 
 class MetricCreateRequest(BaseModel):
@@ -74,6 +76,30 @@ class MetricCreateRequest(BaseModel):
 
 class PipelineRunRequest(BaseModel):
     goal: str = Field(min_length=1)
+
+
+@router.get("/providers", summary="List available AI model providers")
+async def list_providers(current_user: CurrentUser) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "openai",
+            "name": "OpenAI",
+            "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
+            "configured": bool(current_user.openai_api_key),
+        },
+        {
+            "id": "anthropic",
+            "name": "Anthropic",
+            "models": ["claude-3-5-sonnet-latest", "claude-3-haiku"],
+            "configured": bool(current_user.anthropic_api_key),
+        },
+        {
+            "id": "ollama",
+            "name": "Ollama",
+            "models": ["llama3.1", "codellama", "mistral"],
+            "configured": bool(current_user.ollama_base_url),
+        },
+    ]
 
 
 @router.post("/workspaces/{workspace_id}/generate", summary="Generate code from natural language")
@@ -88,25 +114,31 @@ async def generate_code(
 
     async def stream() -> AsyncIterator[str]:
         full_chunks: list[str] = []
-        async for chunk in code_generator.generate_code(
-            user=current_user,
-            prompt=payload.prompt,
-            language=payload.language,
-            workspace_context=context,
-            history=payload.history,
-        ):
-            full_chunks.append(chunk)
-            yield _sse({"type": "token", "text": chunk})
+        try:
+            async for chunk in code_generator.generate_code(
+                user=current_user,
+                prompt=payload.prompt,
+                language=payload.language,
+                workspace_context=context,
+                history=payload.history,
+            ):
+                full_chunks.append(chunk)
+                yield _sse({"type": "token", "text": chunk})
 
-        full_code = "".join(full_chunks)
-        if payload.cell_id:
-            await _update_cell_content(db, workspace_id, payload.cell_id, full_code)
-        yield _sse({"type": "complete", "full_code": full_code})
+            full_code = "".join(full_chunks)
+            if payload.cell_id:
+                await _update_cell_content(db, workspace_id, payload.cell_id, full_code)
+            yield _sse({"type": "complete", "full_code": full_code})
+        except Exception as exc:
+            yield _sse({"type": "error", "text": str(exc)})
+            yield _sse({"type": "complete", "full_code": "".join(full_chunks)})
 
     return _sse_response(stream())
 
 
-@router.post("/workspaces/{workspace_id}/fix-error", summary="Fix generated code based on runtime error")
+@router.post(
+    "/workspaces/{workspace_id}/fix-error", summary="Fix generated code based on runtime error"
+)
 async def fix_error(
     workspace_id: str,
     payload: FixErrorRequest,
@@ -118,25 +150,31 @@ async def fix_error(
 
     async def stream() -> AsyncIterator[str]:
         full_chunks: list[str] = []
-        async for chunk in code_generator.fix_error(
-            user=current_user,
-            original_code=payload.code,
-            error_output=payload.error_output,
-            language=payload.language,
-            workspace_context=context,
-        ):
-            full_chunks.append(chunk)
-            yield _sse({"type": "token", "text": chunk})
+        try:
+            async for chunk in code_generator.fix_error(
+                user=current_user,
+                original_code=payload.code,
+                error_output=payload.error_output,
+                language=payload.language,
+                workspace_context=context,
+            ):
+                full_chunks.append(chunk)
+                yield _sse({"type": "token", "text": chunk})
 
-        full_code = "".join(full_chunks)
-        if payload.cell_id:
-            await _update_cell_content(db, workspace_id, payload.cell_id, full_code)
-        yield _sse({"type": "complete", "full_code": full_code})
+            full_code = "".join(full_chunks)
+            if payload.cell_id:
+                await _update_cell_content(db, workspace_id, payload.cell_id, full_code)
+            yield _sse({"type": "complete", "full_code": full_code})
+        except Exception as exc:
+            yield _sse({"type": "error", "text": str(exc)})
+            yield _sse({"type": "complete", "full_code": "".join(full_chunks)})
 
     return _sse_response(stream())
 
 
-@router.post("/workspaces/{workspace_id}/explain", summary="Explain execution output in plain English")
+@router.post(
+    "/workspaces/{workspace_id}/explain", summary="Explain execution output in plain English"
+)
 async def explain_output(
     workspace_id: str,
     payload: ExplainRequest,
@@ -147,15 +185,19 @@ async def explain_output(
 
     async def stream() -> AsyncIterator[str]:
         full_chunks: list[str] = []
-        async for chunk in code_generator.explain_output(
-            user=current_user,
-            code=payload.code,
-            output=payload.output,
-            language=payload.language,
-        ):
-            full_chunks.append(chunk)
-            yield _sse({"type": "token", "text": chunk})
-        yield _sse({"type": "complete", "full_text": "".join(full_chunks)})
+        try:
+            async for chunk in code_generator.explain_output(
+                user=current_user,
+                code=payload.code,
+                output=payload.output,
+                language=payload.language,
+            ):
+                full_chunks.append(chunk)
+                yield _sse({"type": "token", "text": chunk})
+            yield _sse({"type": "complete", "full_text": "".join(full_chunks)})
+        except Exception as exc:
+            yield _sse({"type": "error", "text": str(exc)})
+            yield _sse({"type": "complete", "full_text": "".join(full_chunks)})
 
     return _sse_response(stream())
 
@@ -220,29 +262,38 @@ async def chat(
     )
 
     async def stream() -> AsyncIterator[str]:
-        messages = [*payload.history, {"role": "user", "content": payload.message}]
-        response = await llm_provider.complete(
-            user=current_user,
-            messages=messages,
-            system=system_prompt,
-            stream=True,
-            max_tokens=1500,
-        )
-        full_chunks: list[str] = []
-        if isinstance(response, str):
-            full_chunks.append(response)
-            yield _sse({"type": "token", "text": response})
-        else:
-            async for chunk in response:
-                full_chunks.append(chunk)
-                yield _sse({"type": "token", "text": chunk})
-        yield _sse({"type": "complete", "full_text": "".join(full_chunks)})
+        try:
+            messages = [*payload.history, {"role": "user", "content": payload.message}]
+            response = await llm_provider.complete(
+                user=current_user,
+                messages=messages,
+                system=system_prompt,
+                stream=True,
+                max_tokens=1500,
+                provider=payload.provider,
+                model=payload.model,
+            )
+            full_chunks: list[str] = []
+            if isinstance(response, str):
+                full_chunks.append(response)
+                yield _sse({"type": "token", "text": response})
+            else:
+                async for chunk in response:
+                    full_chunks.append(chunk)
+                    yield _sse({"type": "token", "text": chunk})
+            yield _sse({"type": "complete", "full_text": "".join(full_chunks)})
+        except Exception as e:
+            error_msg = str(e)
+            if "API key" in error_msg or "api_key" in error_msg.lower():
+                error_msg = "No API key configured. Please add your API key in Settings."
+            yield _sse({"type": "error", "message": error_msg})
 
     return _sse_response(stream())
 
 
 @router.post(
     "/workspaces/{workspace_id}/semantic-layer/metrics",
+    status_code=201,
     summary="Create semantic metric definition",
 )
 async def create_metric(
@@ -303,6 +354,8 @@ async def list_metrics(
 @router.delete(
     "/workspaces/{workspace_id}/semantic-layer/metrics/{metric_id}",
     status_code=204,
+    response_model=None,
+    response_class=Response,
     summary="Delete semantic metric",
 )
 async def delete_metric(
@@ -310,10 +363,11 @@ async def delete_metric(
     metric_id: str,
     current_user: CurrentUser,
     db: DBSession,
-) -> None:
+) -> Response:
     await workspace_service.get_workspace(db, workspace_id, current_user.id)
     layer = SemanticLayer(db)
     await layer.delete_metric(workspace_id, metric_id)
+    return Response(status_code=204)
 
 
 @router.post(
@@ -377,7 +431,9 @@ async def list_pipeline_runs(
     ]
 
 
-@router.get("/workspaces/{workspace_id}/pipelines/{run_id}", summary="Get full pipeline run details")
+@router.get(
+    "/workspaces/{workspace_id}/pipelines/{run_id}", summary="Get full pipeline run details"
+)
 async def get_pipeline_run(
     workspace_id: str,
     run_id: str,
@@ -419,7 +475,9 @@ def _sse_response(content: AsyncIterator[str]) -> StreamingResponse:
     )
 
 
-async def _update_cell_content(db: DBSession, workspace_id: str, cell_id: str, content: str) -> None:
+async def _update_cell_content(
+    db: DBSession, workspace_id: str, cell_id: str, content: str
+) -> None:
     result = await db.execute(
         select(Cell).where(
             Cell.id == cell_id,

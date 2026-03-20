@@ -258,7 +258,9 @@ class AgenticPipelineEngine:
                             }
                         )
                     if node_name == "executor":
-                        await stream_updates({"type": "output", "output": output.get("current_output", {})})
+                        await stream_updates(
+                            {"type": "output", "output": output.get("current_output", {})}
+                        )
                     if node_name == "evaluator":
                         await stream_updates(
                             {

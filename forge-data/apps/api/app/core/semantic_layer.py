@@ -38,18 +38,35 @@ class SemanticLayer:
         formula_sql: str,
         depends_on: list[str] | None = None,
     ) -> Metric:
-        text = f"{name}. {definition}. SQL: {formula_sql}"
+        clean_name = name.strip()
+        clean_definition = definition.strip()
+        clean_formula = formula_sql.strip()
+        text = f"{clean_name}. {clean_definition}. SQL: {clean_formula}"
         embedding = self._embed(text)
-        metric = Metric(
-            workspace_id=workspace_id,
-            created_by=user_id,
-            name=name.strip(),
-            definition=definition.strip(),
-            formula_sql=formula_sql.strip(),
-            depends_on=depends_on or [],
-            embedding=embedding,
+        existing_result = await self.db.execute(
+            select(Metric).where(
+                Metric.workspace_id == workspace_id,
+                Metric.name == clean_name,
+            )
         )
-        self.db.add(metric)
+        metric = existing_result.scalar_one_or_none()
+        if metric is None:
+            metric = Metric(
+                workspace_id=workspace_id,
+                created_by=user_id,
+                name=clean_name,
+                definition=clean_definition,
+                formula_sql=clean_formula,
+                depends_on=depends_on or [],
+                embedding=embedding,
+            )
+            self.db.add(metric)
+        else:
+            metric.definition = clean_definition
+            metric.formula_sql = clean_formula
+            metric.depends_on = depends_on or []
+            metric.embedding = embedding
+            metric.created_by = user_id
         await self.db.flush()
         await self.db.refresh(metric)
         return metric
@@ -81,7 +98,9 @@ class SemanticLayer:
 
     async def list_metrics(self, workspace_id: str) -> list[Metric]:
         result = await self.db.execute(
-            select(Metric).where(Metric.workspace_id == workspace_id).order_by(Metric.created_at.desc())
+            select(Metric)
+            .where(Metric.workspace_id == workspace_id)
+            .order_by(Metric.created_at.desc())
         )
         return list(result.scalars().all())
 

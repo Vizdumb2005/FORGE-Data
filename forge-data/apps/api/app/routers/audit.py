@@ -1,8 +1,10 @@
-from fastapi import APIRouter
-from pydantic import BaseModel
 from datetime import datetime
 
+from fastapi import APIRouter
+from pydantic import BaseModel
+
 router = APIRouter()
+
 
 class AuditLog(BaseModel):
     id: str
@@ -12,6 +14,7 @@ class AuditLog(BaseModel):
     ip_address: str | None
     created_at: datetime
     meta: dict
+
 
 @router.get("", response_model=list[AuditLog])
 @router.get("/", include_in_schema=False)

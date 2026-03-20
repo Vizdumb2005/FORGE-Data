@@ -46,6 +46,7 @@ class LLMProvider:
 
     async def get_client(self, user: User, provider: SupportedProvider | None = None) -> LLMClient:
         resolved_provider = self._resolve_provider(user, provider)
+        resolved_provider = self._fallback_provider_with_key(user, resolved_provider)
 
         if resolved_provider == "openai":
             key = self._resolve_api_key(user, "openai")
@@ -265,3 +266,18 @@ class LLMProvider:
                 f"Unsupported model '{model}' for provider '{provider}'. "
                 f"Supported: {', '.join(sorted(allowed))}"
             )
+
+    def _provider_has_credentials(self, user: User, provider: str) -> bool:
+        if provider == "openai":
+            return bool(user.openai_api_key or settings.openai_api_key)
+        if provider == "anthropic":
+            return bool(user.anthropic_api_key or settings.anthropic_api_key)
+        return provider == "ollama"
+
+    def _fallback_provider_with_key(self, user: User, provider: str) -> str:
+        if self._provider_has_credentials(user, provider):
+            return provider
+        for candidate in ("openai", "anthropic", "ollama"):
+            if self._provider_has_credentials(user, candidate):
+                return candidate
+        return provider

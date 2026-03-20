@@ -33,7 +33,9 @@ class Pipeline(Base):
         index=True,
     )
     goal: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), default=PipelineStatus.pending.value, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), default=PipelineStatus.pending.value, nullable=False
+    )
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False),
@@ -76,7 +78,9 @@ class PipelineRun(Base):
         index=True,
     )
     goal: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), default=PipelineStatus.pending.value, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), default=PipelineStatus.pending.value, nullable=False
+    )
     full_report: Mapped[str | None] = mapped_column(Text, nullable=True)
     steps: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     outputs: Mapped[list | None] = mapped_column(JSONB, nullable=True)

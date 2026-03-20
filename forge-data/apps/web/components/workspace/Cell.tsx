@@ -438,9 +438,11 @@ interface SqlResult {
 
 function extractSqlResult(outputs: CellState["outputs"]): SqlResult | null {
   for (const o of outputs) {
+    if (!o?.data || typeof o.data !== "object") continue;
     const data = o.data as Record<string, unknown>;
+    if (!data) continue;
     // SQL results may be at top level or nested under "application/json"
-    const candidate = (data.columns && data.rows)
+    const candidate = (data?.columns && data?.rows)
       ? data
       : (data["application/json"] as Record<string, unknown> | undefined);
     if (candidate && Array.isArray(candidate.columns) && Array.isArray(candidate.rows)) {

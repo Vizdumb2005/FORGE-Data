@@ -70,6 +70,24 @@ export default function SettingsPage() {
                 {user?.has_anthropic_key ? "Configured" : "Not set"}
               </span>
             </div>
+            <div className="flex items-center justify-between">
+              <span className="text-foreground">Ollama (Local)</span>
+              <span
+                className={
+                  user?.has_ollama_url
+                    ? "text-green-400"
+                    : "text-forge-muted"
+                }
+              >
+                {user?.has_ollama_url ? "Configured" : "Not set"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between pt-1 border-t border-forge-border/60">
+              <span className="text-foreground">Preferred provider</span>
+              <span className="text-forge-muted capitalize">
+                {user?.preferred_llm_provider ?? "openai"}
+              </span>
+            </div>
           </div>
         </section>
       </div>

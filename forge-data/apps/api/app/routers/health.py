@@ -4,10 +4,9 @@ import time
 
 from fastapi import APIRouter, Query
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import database as _db_module
-from app.dependencies import DBSession, CurrentUser
+from app.dependencies import CurrentUser, DBSession
 
 router = APIRouter()
 
@@ -64,13 +63,10 @@ async def recent_audit(
 ):
     """Return the most recent audit log entries for the authenticated user."""
     from sqlalchemy import select
+
     from app.models.audit_log import AuditLog
 
-    stmt = (
-        select(AuditLog)
-        .order_by(AuditLog.created_at.desc())
-        .limit(limit)
-    )
+    stmt = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)
     result = await db.execute(stmt)
     rows = result.scalars().all()
 

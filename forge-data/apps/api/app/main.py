@@ -19,6 +19,7 @@ from app.core.query_engine import FederatedQueryEngine
 from app.core.redis import close_redis, ping_redis
 from app.routers import (
     ai,
+    audit,
     auth,
     cells,
     connectors,
@@ -28,7 +29,6 @@ from app.routers import (
     health,
     users,
     workspaces,
-    audit,
 )
 
 logger = logging.getLogger(__name__)

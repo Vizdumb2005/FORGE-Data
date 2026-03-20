@@ -237,7 +237,7 @@ export default function ChatPanel({ workspaceId, width, onClose }: ChatPanelProp
         buffer = lines.pop() ?? "";
 
         for (const line of lines) {
-          const payload = parseSseLine<{ type?: string; text?: string; full_text?: string }>(line);
+          const payload = parseSseLine<{ type?: string; text?: string; full_text?: string; message?: string }>(line);
           if (!payload) continue;
           if (payload.type === "token" && payload.text) {
             fullText += payload.text;
@@ -253,6 +253,21 @@ export default function ChatPanel({ workspaceId, width, onClose }: ChatPanelProp
                   : m,
               ),
             );
+          }
+          if (payload.type === "error") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      subtype: "error",
+                      content: payload.message || "An error occurred.",
+                      complete: true,
+                    }
+                  : m,
+              ),
+            );
+            break;
           }
           if (payload.type === "complete") {
             setMessages((prev) =>
@@ -305,7 +320,10 @@ export default function ChatPanel({ workspaceId, width, onClose }: ChatPanelProp
 
   return (
     <TooltipProvider>
-      <div className="flex h-full flex-col border-l border-forge-border bg-forge-surface" style={{ width }}>
+      <div 
+        className="flex h-full flex-col border-l border-forge-border bg-forge-surface"
+        style={{ width }}
+      >
         <div className="flex items-center justify-between border-b border-forge-border px-3 py-2">
           <div className="flex items-center gap-2">
             <Bot className="h-4 w-4 text-forge-accent" />

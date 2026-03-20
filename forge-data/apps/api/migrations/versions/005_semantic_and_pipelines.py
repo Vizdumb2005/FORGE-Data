@@ -65,11 +65,15 @@ def upgrade() -> None:
             completed_at TIMESTAMPTZ
         )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS ix_pipeline_runs_pipeline_id ON pipeline_runs(pipeline_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_pipeline_runs_pipeline_id ON pipeline_runs(pipeline_id)"
+    )
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_pipeline_runs_workspace_id ON pipeline_runs(workspace_id)"
     )
-    op.execute("CREATE INDEX IF NOT EXISTS ix_pipeline_runs_created_by ON pipeline_runs(created_by)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_pipeline_runs_created_by ON pipeline_runs(created_by)"
+    )
 
     op.execute("""
         CREATE TABLE IF NOT EXISTS scheduled_pipelines (
