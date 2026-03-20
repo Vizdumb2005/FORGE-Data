@@ -10,12 +10,27 @@ import {
   Loader2,
   PanelRightOpen,
   PanelRightClose,
+  FlaskConical,
+  Workflow,
+  BookOpenCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/hooks/useWorkspace";
 import { useWorkspaceStore, type KernelStatus } from "@/lib/stores/workspaceStore";
 import Canvas from "@/components/workspace/Canvas";
 import ChatPanel from "@/components/ai/ChatPanel";
+import PipelineBuilder from "@/components/ai/PipelineBuilder";
+import StatAdvisorPanel from "@/components/ai/StatAdvisorPanel";
+import SemanticLayerManager from "@/components/ai/SemanticLayerManager";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { listDatasets } from "@/lib/api/datasets";
+import type { Dataset } from "@/types";
 
 // ── Kernel status colors ─────────────────────────────────────────────────────
 
@@ -67,6 +82,10 @@ export default function WorkspacePage() {
 
   const [chatWidth, setChatWidth] = useState(360);
   const [chatOpen, setChatOpen] = useState(true);
+  const [pipelineOpen, setPipelineOpen] = useState(false);
+  const [statAdvisorOpen, setStatAdvisorOpen] = useState(false);
+  const [semanticOpen, setSemanticOpen] = useState(false);
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
   const resizing = useRef(false);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
@@ -91,6 +110,26 @@ export default function WorkspacePage() {
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
   }, [chatWidth]);
+
+  useEffect(() => {
+    if (!id) return;
+    void listDatasets(id).then(setDatasets).catch(() => setDatasets([]));
+  }, [id]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setChatOpen(true);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        setPipelineOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // ── Loading state ──────────────────────────────────────────────────────
 
@@ -173,6 +212,30 @@ export default function WorkspacePage() {
             <Share2 className="h-3.5 w-3.5" />
           </button>
 
+          <button
+            onClick={() => setStatAdvisorOpen(true)}
+            className="rounded-md p-1.5 text-forge-muted hover:text-foreground hover:bg-forge-border transition-colors"
+            title="Stat advisor"
+          >
+            <FlaskConical className="h-3.5 w-3.5" />
+          </button>
+
+          <button
+            onClick={() => setPipelineOpen(true)}
+            className="rounded-md p-1.5 text-forge-muted hover:text-foreground hover:bg-forge-border transition-colors"
+            title="Pipeline builder"
+          >
+            <Workflow className="h-3.5 w-3.5" />
+          </button>
+
+          <button
+            onClick={() => setSemanticOpen(true)}
+            className="rounded-md p-1.5 text-forge-muted hover:text-foreground hover:bg-forge-border transition-colors"
+            title="Semantic layer"
+          >
+            <BookOpenCheck className="h-3.5 w-3.5" />
+          </button>
+
           {/* Toggle chat panel */}
           <button
             onClick={() => setChatOpen(!chatOpen)}
@@ -208,11 +271,39 @@ export default function WorkspacePage() {
               className="w-1 cursor-col-resize bg-forge-border hover:bg-forge-accent/50 transition-colors shrink-0"
             />
             <div className="shrink-0 overflow-hidden" style={{ width: chatWidth }}>
-              <ChatPanel workspaceId={id} />
+              {statAdvisorOpen ? (
+                <StatAdvisorPanel
+                  workspaceId={id}
+                  datasets={datasets}
+                  onClose={() => setStatAdvisorOpen(false)}
+                />
+              ) : (
+                <ChatPanel workspaceId={id} width={chatWidth} onClose={() => setChatOpen(false)} />
+              )}
             </div>
           </>
         )}
       </div>
+
+      <PipelineBuilder
+        workspaceId={id}
+        open={pipelineOpen}
+        onOpenChange={setPipelineOpen}
+      />
+
+      <Sheet open={semanticOpen} onOpenChange={setSemanticOpen}>
+        <SheetContent side="right" className="w-[720px] max-w-[95vw] overflow-auto">
+          <SheetHeader>
+            <SheetTitle>Semantic Layer Manager</SheetTitle>
+            <SheetDescription>
+              Define reusable business metrics so AI understands your KPIs.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="p-4">
+            <SemanticLayerManager workspaceId={id} datasets={datasets} />
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

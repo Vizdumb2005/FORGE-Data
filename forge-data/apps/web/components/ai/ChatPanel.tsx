@@ -1,190 +1,546 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Send, Bot, User, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import {
+  Bot,
+  CheckCircle2,
+  Loader2,
+  Send,
+  User as UserIcon,
+  X,
+} from "lucide-react";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { cn, parseSseLine } from "@/lib/utils";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { getAccessToken } from "@/lib/auth";
-import type { ChatMessage, LLMProvider } from "@/types";
+import { useWorkspaceStore } from "@/lib/stores/workspaceStore";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
+import type { CellLanguage, CellType } from "@/types";
+
+const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
+const ReactMarkdown = dynamic(() => import("react-markdown"), { ssr: false });
+
+type ChatModelId =
+  | "gpt-4o"
+  | "gpt-4o-mini"
+  | "claude-3-5-sonnet-latest"
+  | "claude-3-haiku"
+  | "llama3.1";
+
+type ChatLanguage = "auto" | "python" | "sql" | "r";
 
 interface ChatPanelProps {
   workspaceId: string;
+  width: number;
+  onClose: () => void;
 }
 
-const BASE_URL = "";
+type AssistantSubtype = "text" | "code_block" | "error" | "thinking";
+type ChatRole = "user" | "assistant" | "system";
 
-export default function ChatPanel({ workspaceId }: ChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: "system",
-      content: `You are a data assistant helping the user analyse data in workspace ${workspaceId}. Be concise and helpful.`,
-    },
-  ]);
+interface PanelMessage {
+  id: string;
+  role: ChatRole;
+  subtype?: AssistantSubtype;
+  content: string;
+  language?: CellLanguage;
+  complete?: boolean;
+}
+
+const MODELS: Array<{
+  id: ChatModelId;
+  label: string;
+  provider: "openai" | "anthropic" | "ollama";
+  capabilityKey: "has_openai_key" | "has_anthropic_key" | "has_ollama_url";
+}> = [
+  { id: "gpt-4o", label: "GPT-4o", provider: "openai", capabilityKey: "has_openai_key" },
+  {
+    id: "gpt-4o-mini",
+    label: "GPT-4o Mini",
+    provider: "openai",
+    capabilityKey: "has_openai_key",
+  },
+  {
+    id: "claude-3-5-sonnet-latest",
+    label: "Claude 3.5 Sonnet",
+    provider: "anthropic",
+    capabilityKey: "has_anthropic_key",
+  },
+  {
+    id: "claude-3-haiku",
+    label: "Claude 3 Haiku",
+    provider: "anthropic",
+    capabilityKey: "has_anthropic_key",
+  },
+  { id: "llama3.1", label: "Llama 3.1 (Ollama)", provider: "ollama", capabilityKey: "has_ollama_url" },
+];
+
+const QUICK_ACTIONS = [
+  "📊 Visualize this dataset",
+  "🔍 Find correlations",
+  "🧪 Suggest statistical tests",
+  "📈 What are the trends?",
+];
+
+const STORAGE_KEY = "forge.ai.chat.model";
+
+export default function ChatPanel({ workspaceId, width, onClose }: ChatPanelProps) {
+  const { user } = useAuth();
+  const { createCell, setActiveCellId } = useWorkspaceStore();
+  const [messages, setMessages] = useState<PanelMessage[]>([]);
   const [input, setInput] = useState("");
+  const [language, setLanguage] = useState<ChatLanguage>("auto");
+  const [modelId, setModelId] = useState<ChatModelId>("gpt-4o");
   const [streaming, setStreaming] = useState(false);
-  const [provider, setProvider] = useState<LLMProvider>("openai");
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+  const [justInsertedCellId, setJustInsertedCellId] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const visibleMessages = messages.filter((m) => m.role !== "system");
+  const currentModel = useMemo(() => MODELS.find((m) => m.id === modelId) ?? MODELS[0], [modelId]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY) as ChatModelId | null;
+    if (saved && MODELS.some((m) => m.id === saved)) {
+      setModelId(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, modelId);
+  }, [modelId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [visibleMessages.length, streaming]);
+  }, [messages, streaming]);
 
-  const send = async () => {
-    const text = input.trim();
+  const resizeTextarea = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, []);
+
+  const detectLanguage = (content: string): CellLanguage => {
+    if (content.includes("```sql")) return "sql";
+    if (content.includes("```r")) return "r";
+    if (content.includes("```python")) return "python";
+    if (language === "sql") return "sql";
+    if (language === "r") return "r";
+    return "python";
+  };
+
+  const extractCodeFence = (content: string): string | null => {
+    const match = content.match(/```[a-zA-Z]*\n([\s\S]*?)```/);
+    return match?.[1]?.trim() ?? null;
+  };
+
+  const getCellLanguageFromChatLanguage = (lang: ChatLanguage): CellLanguage => {
+    if (lang === "sql") return "sql";
+    if (lang === "r") return "r";
+    return "python";
+  };
+
+  const insertAsCell = async (message: PanelMessage) => {
+    const code = extractCodeFence(message.content) ?? message.content.trim();
+    const inferredLanguage = message.language ?? detectLanguage(message.content);
+    const created = await createCell(workspaceId, {
+      cell_type: inferredLanguage === "sql" ? "sql" : "code",
+      language: inferredLanguage,
+      content: code,
+      position_x: 60,
+      position_y: 9_999_999,
+      width: 600,
+      height: 320,
+    });
+    setActiveCellId(created.id);
+    setJustInsertedCellId(created.id);
+    setTimeout(() => setJustInsertedCellId(null), 1800);
+  };
+
+  const send = async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
     if (!text || streaming) return;
     setInput("");
+    resizeTextarea();
 
-    const newMessages: ChatMessage[] = [
-      ...messages,
-      { role: "user", content: text },
-    ];
-    setMessages(newMessages);
+    const userMsg: PanelMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: text,
+    };
+    const assistantId = crypto.randomUUID();
+    const thinkingMsg: PanelMessage = {
+      id: assistantId,
+      role: "assistant",
+      subtype: "thinking",
+      content: "",
+    };
+
+    setMessages((prev) => [...prev, userMsg, thinkingMsg]);
     setStreaming(true);
+    setStreamingMessageId(assistantId);
 
-    // Append placeholder for assistant response
-    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+    const token = getAccessToken();
+    const history = messages
+      .filter((m) => m.role !== "system")
+      .map((m) => ({ role: m.role, content: m.content }));
 
     try {
-      const token = getAccessToken();
-      const resp = await fetch(`${BASE_URL}/api/v1/ai/chat/stream`, {
+      const resp = await fetch("/api/v1/ai/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ messages: newMessages, provider }),
+        body: JSON.stringify({
+          workspace_id: workspaceId,
+          message:
+            language === "auto"
+              ? text
+              : `[Prefer ${language.toUpperCase()} when generating code]\n${text}`,
+          history,
+          provider: currentModel.provider,
+          model: currentModel.id,
+        }),
       });
 
-      if (!resp.body) throw new Error("No response body");
+      if (!resp.ok || !resp.body) {
+        throw new Error("Failed to stream AI response");
+      }
+
       const reader = resp.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = "";
+      let fullText = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        for (const line of value.split("\n")) {
-          const payload = parseSseLine<{ delta?: string }>(line);
-          if (payload?.delta) {
-            setMessages((prev) => {
-              const updated = [...prev];
-              const last = updated[updated.length - 1];
-              if (last.role === "assistant") {
-                updated[updated.length - 1] = {
-                  ...last,
-                  content: last.content + payload.delta,
-                };
-              }
-              return updated;
-            });
+        buffer += value;
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const payload = parseSseLine<{ type?: string; text?: string; full_text?: string }>(line);
+          if (!payload) continue;
+          if (payload.type === "token" && payload.text) {
+            fullText += payload.text;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      subtype: fullText.includes("```") ? "code_block" : "text",
+                      content: fullText,
+                      language: detectLanguage(fullText),
+                    }
+                  : m,
+              ),
+            );
+          }
+          if (payload.type === "complete") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      subtype: (m.content || payload.full_text || "").includes("```")
+                        ? "code_block"
+                        : "text",
+                      complete: true,
+                      language: detectLanguage(m.content || payload.full_text || ""),
+                    }
+                  : m,
+              ),
+            );
           }
         }
       }
-    } catch (err) {
-      setMessages((prev) => {
-        const updated = [...prev];
-        const last = updated[updated.length - 1];
-        if (last.role === "assistant" && last.content === "") {
-          updated[updated.length - 1] = {
-            ...last,
-            content: "Error: failed to get a response.",
-          };
-        }
-        return updated;
-      });
-      console.error(err);
+    } catch (error) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? {
+                ...m,
+                subtype: "error",
+                content: error instanceof Error ? error.message : "Failed to generate response.",
+                complete: true,
+              }
+            : m,
+        ),
+      );
     } finally {
       setStreaming(false);
+      setStreamingMessageId(null);
     }
   };
 
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "enter") {
+      e.preventDefault();
+      void send();
+    }
+  };
+
+  const userHasProviderAccess = (model: (typeof MODELS)[number]) => {
+    if (!user) return false;
+    return Boolean(user[model.capabilityKey]);
+  };
+
   return (
-    <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-forge-border px-4 py-3">
-        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-          <Bot className="h-4 w-4 text-forge-accent" />
-          AI Assistant
-        </div>
-        <select
-          value={provider}
-          onChange={(e) => setProvider(e.target.value as LLMProvider)}
-          className="rounded border border-forge-border bg-forge-bg px-2 py-0.5 text-xs text-forge-muted focus:outline-none"
-          aria-label="Select AI provider"
-        >
-          <option value="openai">OpenAI</option>
-          <option value="anthropic">Anthropic</option>
-          <option value="ollama">Ollama</option>
-        </select>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-        {visibleMessages.length === 0 && (
-          <p className="text-center text-xs text-forge-muted mt-8">
-            Ask anything about your data…
-          </p>
-        )}
-        {visibleMessages.map((msg, i) => (
-          <div
-            key={i}
-            className={cn(
-              "flex gap-2",
-              msg.role === "user" ? "justify-end" : "justify-start"
-            )}
-          >
-            {msg.role === "assistant" && (
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-forge-accent/20 text-forge-accent">
-                <Bot className="h-3.5 w-3.5" />
-              </div>
-            )}
-            <div
-              className={cn(
-                "max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed",
-                msg.role === "user"
-                  ? "bg-forge-accent/10 text-foreground"
-                  : "bg-forge-surface border border-forge-border text-foreground"
-              )}
-            >
-              <p className="whitespace-pre-wrap">{msg.content}</p>
-              {streaming && i === visibleMessages.length - 1 && msg.role === "assistant" && (
-                <Loader2 className="mt-1 h-3 w-3 animate-spin text-forge-muted" />
-              )}
-            </div>
-            {msg.role === "user" && (
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-forge-border">
-                <User className="h-3.5 w-3.5 text-foreground" />
-              </div>
-            )}
+    <TooltipProvider>
+      <div className="flex h-full flex-col border-l border-forge-border bg-forge-surface" style={{ width }}>
+        <div className="flex items-center justify-between border-b border-forge-border px-3 py-2">
+          <div className="flex items-center gap-2">
+            <Bot className="h-4 w-4 text-forge-accent" />
+            <span className="text-sm font-semibold text-foreground">AI Assistant</span>
           </div>
-        ))}
-        <div ref={bottomRef} />
-      </div>
 
-      {/* Input */}
-      <div className="border-t border-forge-border p-3">
-        <div className="flex gap-2">
-          <input
+          <div className="flex items-center gap-1">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="rounded-md border border-forge-border bg-forge-bg px-2 py-1 text-xs text-foreground hover:bg-forge-border">
+                  {currentModel.label}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {MODELS.map((model) => {
+                  const enabled = userHasProviderAccess(model);
+                  const row = (
+                    <DropdownMenuItem
+                      key={model.id}
+                      disabled={!enabled}
+                      onClick={() => enabled && setModelId(model.id)}
+                      className="flex items-center justify-between gap-3"
+                    >
+                      <span>{model.label}</span>
+                      {model.id === modelId && <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />}
+                    </DropdownMenuItem>
+                  );
+                  if (enabled) return row;
+                  return (
+                    <Tooltip key={model.id}>
+                      <TooltipTrigger asChild>
+                        <div>{row}</div>
+                      </TooltipTrigger>
+                      <TooltipContent>Configure key in Settings</TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <button
+              onClick={onClose}
+              className="rounded-md p-1 text-forge-muted hover:bg-forge-border hover:text-foreground"
+              aria-label="Close AI panel"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <ScrollArea className="flex-1 px-3 py-3">
+          <div className="space-y-3">
+            {messages.length === 0 && (
+              <p className="mt-10 text-center text-xs text-forge-muted">
+                Ask anything about your data and analysis.
+              </p>
+            )}
+
+            {messages.map((msg) => (
+              <div key={msg.id}>
+                {msg.role === "system" && (
+                  <div className="text-center text-xs text-forge-muted">{msg.content}</div>
+                )}
+
+                {msg.role === "user" && (
+                  <div className="flex justify-end gap-2">
+                    <div className="max-w-[85%] rounded-xl bg-forge-bg px-3 py-2 text-sm text-foreground">
+                      {msg.content}
+                    </div>
+                    <div className="mt-0.5 rounded-full bg-forge-border p-1.5">
+                      <UserIcon className="h-3.5 w-3.5" />
+                    </div>
+                  </div>
+                )}
+
+                {msg.role === "assistant" && (
+                  <div className="flex gap-2">
+                    <div className="mt-0.5 rounded-full bg-forge-accent/20 p-1.5 text-forge-accent">
+                      <Bot className="h-3.5 w-3.5" />
+                    </div>
+                    <div
+                      className={cn(
+                        "max-w-[88%] rounded-xl border px-3 py-2 text-sm",
+                        msg.subtype === "error"
+                          ? "border-red-800 bg-red-950/40 text-red-200"
+                          : "border-forge-border bg-forge-bg text-foreground",
+                      )}
+                    >
+                      {msg.subtype === "thinking" ? (
+                        <ThinkingDots />
+                      ) : msg.subtype === "code_block" ? (
+                        <CodeMessage
+                          message={msg}
+                          onInsert={insertAsCell}
+                          highlightedCellId={justInsertedCellId}
+                        />
+                      ) : (
+                        <div className="prose prose-invert prose-sm max-w-none">
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                          {streamingMessageId === msg.id && (
+                            <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-forge-accent align-middle" />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div ref={bottomRef} />
+          </div>
+        </ScrollArea>
+
+        <div className="border-t border-forge-border p-3">
+          <Textarea
+            ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
+            onChange={(e) => {
+              setInput(e.target.value);
+              resizeTextarea();
             }}
-            placeholder="Ask about your data…"
-            className="flex-1 rounded-md border border-forge-border bg-forge-bg px-3 py-2 text-sm text-foreground placeholder:text-forge-muted focus:border-forge-accent focus:outline-none"
+            onKeyDown={onInputKeyDown}
+            placeholder="Ask AI to analyze, generate code, or explain output..."
+            className="max-h-[200px] min-h-[72px] resize-none bg-forge-bg"
           />
-          <button
-            onClick={send}
-            disabled={!input.trim() || streaming}
-            className="rounded-md bg-forge-accent p-2 text-forge-bg hover:bg-forge-accent-dim disabled:opacity-50"
-            aria-label="Send message"
-          >
-            <Send className="h-4 w-4" />
-          </button>
+
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-1">
+              {(["auto", "python", "sql", "r"] as const).map((lang) => (
+                <button
+                  key={lang}
+                  onClick={() => setLanguage(lang)}
+                  className={cn(
+                    "rounded-md px-2 py-1 text-xs",
+                    language === lang
+                      ? "bg-forge-accent text-forge-bg"
+                      : "bg-forge-bg text-forge-muted hover:bg-forge-border hover:text-foreground",
+                  )}
+                >
+                  {lang === "auto" ? "Auto" : lang.toUpperCase()}
+                </button>
+              ))}
+            </div>
+
+            <Button
+              size="sm"
+              onClick={() => void send()}
+              disabled={streaming || !input.trim()}
+              className="bg-forge-accent text-forge-bg hover:bg-forge-accent-dim"
+            >
+              {streaming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {QUICK_ACTIONS.map((action) => (
+              <button
+                key={action}
+                onClick={() => void send(action)}
+                className="rounded-full border border-forge-border bg-forge-bg px-2.5 py-1 text-[11px] text-forge-muted hover:border-forge-accent/60 hover:text-forge-accent"
+              >
+                {action}
+              </button>
+            ))}
+          </div>
+
+          <p className="mt-1 text-[10px] text-forge-muted">Ctrl+Enter to send</p>
         </div>
       </div>
+    </TooltipProvider>
+  );
+}
+
+function ThinkingDots() {
+  return (
+    <div className="flex items-center gap-1 py-1">
+      <span className="h-2 w-2 animate-bounce rounded-full bg-forge-accent [animation-delay:-0.3s]" />
+      <span className="h-2 w-2 animate-bounce rounded-full bg-forge-accent [animation-delay:-0.15s]" />
+      <span className="h-2 w-2 animate-bounce rounded-full bg-forge-accent" />
+    </div>
+  );
+}
+
+function CodeMessage({
+  message,
+  onInsert,
+  highlightedCellId,
+}: {
+  message: PanelMessage;
+  onInsert: (message: PanelMessage) => Promise<void>;
+  highlightedCellId: string | null;
+}) {
+  const fenced = message.content.match(/```([a-zA-Z]*)\n([\s\S]*?)```/);
+  const lang = (fenced?.[1] || message.language || "python").toString().toLowerCase();
+  const code = fenced?.[2] ?? message.content;
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-hidden rounded-md border border-forge-border">
+        <MonacoEditor
+          height={220}
+          language={lang}
+          theme="vs-dark"
+          value={code}
+          options={{
+            readOnly: true,
+            minimap: { enabled: false },
+            fontSize: 12,
+            scrollBeyondLastLine: false,
+            wordWrap: "off",
+          }}
+        />
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-wider text-forge-muted">{lang}</span>
+        {message.complete && (
+          <button
+            onClick={() => void onInsert(message)}
+            className={cn(
+              "rounded-md border px-2 py-1 text-xs",
+              highlightedCellId
+                ? "border-green-400 bg-green-500/15 text-green-300"
+                : "border-forge-accent/50 bg-forge-accent/10 text-forge-accent hover:bg-forge-accent/20",
+            )}
+          >
+            Insert into new cell
+          </button>
+        )}
+      </div>
+      {!fenced && (
+        <SyntaxHighlighter language={lang} style={oneDark} customStyle={{ borderRadius: 8, margin: 0 }}>
+          {code}
+        </SyntaxHighlighter>
+      )}
     </div>
   );
 }

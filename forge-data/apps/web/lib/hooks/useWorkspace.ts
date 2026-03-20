@@ -178,9 +178,12 @@ export function useWorkspace(workspaceId?: string) {
         const rawOutputs: CellOutput[] | undefined = data.outputs ?? (data.output ? [data.output] : undefined);
         if (rawOutputs) {
           // Backend sends "type" field; normalize to "mime_type" for frontend
-          const normalized = rawOutputs.map((o: Record<string, unknown>) => ({
+          const normalized = rawOutputs.map((o) => ({
             ...o,
-            mime_type: (o.mime_type as string) ?? (o.type as string) ?? "text/plain",
+            mime_type:
+              o.mime_type ??
+              ((o.data as Record<string, unknown> | undefined)?.type as string | undefined) ??
+              "text/plain",
           })) as CellOutput[];
           store.setCellOutputs(cellId, normalized);
         }
