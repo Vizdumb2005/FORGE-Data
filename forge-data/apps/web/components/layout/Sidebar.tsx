@@ -17,6 +17,7 @@ import {
 import { cn, initials } from "@/lib/utils";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Logo } from "@/components/Logo";
 import {
   Tooltip,
   TooltipContent,
@@ -52,27 +53,20 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
     <TooltipProvider delayDuration={200}>
       <aside
         className={cn(
-          "flex h-full shrink-0 flex-col border-r border-forge-border bg-forge-surface transition-all duration-200",
+          "flex h-full shrink-0 flex-col border-r border-border bg-card transition-all duration-200",    
           sidebarWidth
         )}
       >
         {/* Logo */}
-        <div className="flex h-12 items-center justify-between border-b border-forge-border px-3">
+        <div className={cn("flex h-14 items-center border-b border-border px-4", collapsed ? "justify-center" : "justify-between")}>
           {!collapsed && (
-            <Link href="/dashboard" className="flex items-center gap-1.5">
-              <span className="font-mono text-sm font-semibold text-forge-accent">
-                FORGE
-              </span>
-              <span className="font-sans text-xs font-light text-forge-muted">
-                Data
-              </span>
-            </Link>
+            <Logo size="sm" />
           )}
           <button
             onClick={onToggle}
             className={cn(
-              "rounded-md p-1.5 text-forge-muted hover:bg-forge-border hover:text-foreground transition-colors",
-              collapsed && "mx-auto"
+              "rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors",        
+              !collapsed && "ml-auto"
             )}
           >
             {collapsed ? (
@@ -84,23 +78,23 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </div>
 
         {/* Main nav */}
-        <nav className="flex-1 overflow-y-auto px-2 py-3">
-          <ul className="space-y-0.5">
+        <nav className="flex-1 overflow-y-auto px-3 py-4">
+          <ul className="space-y-1">
             {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
               const active = pathname.startsWith(href);
               const item = (
                 <Link
                   href={href}
                   className={cn(
-                    "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
+                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                     active
-                      ? "bg-forge-accent/10 text-forge-accent"
-                      : "text-forge-muted hover:bg-forge-border/50 hover:text-foreground",
-                    collapsed && "justify-center px-0"
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    collapsed && "justify-center px-2"
                   )}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
-                  {!collapsed && label}
+                  {!collapsed && <span>{label}</span>}
                 </Link>
               );
 
@@ -121,11 +115,11 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
           {/* Workspaces section */}
           {!collapsed && workspaces.length > 0 && (
-            <div className="mt-5">
-              <p className="mb-1.5 px-3 font-mono text-[10px] font-semibold uppercase tracking-widest text-forge-muted">
+            <div className="mt-8">
+              <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
                 Workspaces
               </p>
-              <ul className="space-y-0.5">
+              <ul className="space-y-1">
                 {workspaces.slice(0, 5).map((ws) => {
                   const active = pathname === `/workspace/${ws.id}`;
                   return (
@@ -133,13 +127,13 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                       <Link
                         href={`/workspace/${ws.id}`}
                         className={cn(
-                          "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs transition-colors",
+                          "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
                           active
-                            ? "bg-forge-accent/10 text-forge-accent"
-                            : "text-forge-muted hover:bg-forge-border/50 hover:text-foreground"
+                            ? "bg-primary/10 text-primary"
+                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                         )}
                       >
-                        <FolderOpen className="h-3 w-3 shrink-0" />
+                        <FolderOpen className="h-3.5 w-3.5 shrink-0 opacity-70" />
                         <span className="truncate">{ws.name}</span>
                       </Link>
                     </li>
@@ -150,12 +144,12 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           )}
 
           {collapsed && workspaces.length > 0 && (
-            <div className="mt-3">
+            <div className="mt-4 flex justify-center">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link
                     href="/dashboard"
-                    className="flex items-center justify-center rounded-md px-3 py-2 text-forge-muted hover:bg-forge-border/50 hover:text-foreground"
+                    className="flex items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   >
                     <FolderOpen className="h-4 w-4" />
                   </Link>
@@ -167,56 +161,62 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </nav>
 
         {/* Bottom nav (Settings) */}
-        <div className="border-t border-forge-border px-2 py-2">
-          {BOTTOM_ITEMS.map(({ href, label, icon: Icon }) => {
-            const active = pathname.startsWith(href);
-            const item = (
-              <Link
-                href={href}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
-                  active
-                    ? "bg-forge-accent/10 text-forge-accent"
-                    : "text-forge-muted hover:bg-forge-border/50 hover:text-foreground",
-                  collapsed && "justify-center px-0"
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {!collapsed && label}
-              </Link>
-            );
+        <div className="border-t border-border px-3 py-4">
+          <ul className="space-y-1">
+            {BOTTOM_ITEMS.map(({ href, label, icon: Icon }) => {
+              const active = pathname.startsWith(href);
+              const item = (
+                <Link
+                  href={href}
+                  className={cn(
+                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    active
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    collapsed && "justify-center px-2"
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {!collapsed && <span>{label}</span>}
+                </Link>
+              );
 
-            return collapsed ? (
-              <Tooltip key={href}>
-                <TooltipTrigger asChild>{item}</TooltipTrigger>
-                <TooltipContent side="right">{label}</TooltipContent>
-              </Tooltip>
-            ) : (
-              <div key={href}>{item}</div>
-            );
-          })}
+              return (
+                <li key={href}>
+                   {collapsed ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>{item}</TooltipTrigger>
+                      <TooltipContent side="right">{label}</TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    item
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </div>
 
         {/* User footer */}
-        <div className="border-t border-forge-border p-3">
+        <div className="border-t border-border p-4">
           <div
             className={cn(
-              "flex items-center",
-              collapsed ? "justify-center" : "gap-2"
+              "flex items-center gap-3",
+              collapsed && "justify-center"
             )}
           >
-            <Avatar className="h-7 w-7 shrink-0">
-              <AvatarFallback className="text-[10px] bg-forge-accent/20 text-forge-accent">
+            <Avatar className="h-8 w-8 shrink-0 border border-border">
+              <AvatarFallback className="text-xs bg-muted text-muted-foreground">
                 {initials(user?.full_name ?? user?.email ?? "?")}
               </AvatarFallback>
             </Avatar>
             {!collapsed && (
-              <>
-                <div className="flex-1 min-w-0">
-                  <p className="truncate text-xs font-medium text-foreground">
-                    {user?.full_name ?? user?.email}
+              <div className="flex flex-1 items-center justify-between overflow-hidden">
+                <div className="truncate">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {user?.full_name || "User"}
                   </p>
-                  <p className="truncate text-[10px] text-forge-muted">
+                  <p className="truncate text-xs text-muted-foreground">
                     {user?.email}
                   </p>
                 </div>
@@ -224,14 +224,14 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   <TooltipTrigger asChild>
                     <button
                       onClick={logout}
-                      className="text-forge-muted hover:text-foreground transition-colors"
+                      className="ml-2 rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
                     >
-                      <LogOut className="h-3.5 w-3.5" />
+                      <LogOut className="h-4 w-4" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="right">Sign out</TooltipContent>
                 </Tooltip>
-              </>
+              </div>
             )}
           </div>
         </div>

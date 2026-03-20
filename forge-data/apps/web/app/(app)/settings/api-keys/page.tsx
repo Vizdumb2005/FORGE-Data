@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
-import { KeyRound } from "lucide-react";
+import { Loader2, Save, Terminal, Play } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { cn } from "@/lib/utils";
 
 const PLACEHOLDER_KEY = "[[ENCRYPTED_EXISTS]]";
 
@@ -98,7 +99,7 @@ export default function ApiKeysPage() {
         preferred_llm_provider: parsed.settings?.active_provider ?? "ollama",
       });
       await fetchMe();
-      setStatus("Configuration saved.");
+      setStatus("Configuration saved successfully.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save configuration.");
     } finally {
@@ -114,7 +115,7 @@ export default function ApiKeysPage() {
       await saveJsonConfig();
       const resp = await api.post("/api/v1/auth/me/api-keys/test", { provider: providerId });
       if (resp.data?.valid) {
-        setStatus(`${providerId}: connection successful.`);
+        setStatus(`${providerId}: connection verified.`);
       } else {
         setError(`${providerId}: ${resp.data?.error ?? "validation failed"}`);
       }
@@ -126,50 +127,103 @@ export default function ApiKeysPage() {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="mb-4 text-2xl font-semibold text-foreground flex items-center gap-2">
-        <KeyRound className="h-6 w-6 text-forge-accent" />
-        Universal AI Provider JSON Config
-      </h1>
-      <p className="mb-4 text-sm text-forge-muted">
-        Edit the full provider config JSON directly. Local providers are checked first, then cloud fallback.
-      </p>
-
-      {loading ? (
-        <p className="text-sm text-forge-muted">Loading configuration...</p>
-      ) : (
-        <>
-          <textarea
-            value={jsonText}
-            onChange={(e) => setJsonText(e.target.value)}
-            rows={26}
-            className="w-full rounded-md border border-forge-border bg-forge-bg px-3 py-3 text-xs font-mono text-foreground focus:border-forge-accent focus:outline-none"
-          />
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {providerIds.map((providerId) => (
-              <button
-                key={providerId}
-                onClick={() => void testProvider(providerId)}
-                disabled={Boolean(testingProvider) || saving}
-                className="rounded-md border border-forge-border px-3 py-2 text-xs text-foreground hover:bg-forge-border/40 disabled:opacity-50"
-              >
-                {testingProvider === providerId ? `Testing ${providerId}…` : `Test ${providerId}`}
-              </button>
-            ))}
-
-            <button
+    <div className="container max-w-5xl py-10 space-y-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">AI Configuration</h1>
+          <p className="text-muted-foreground mt-2">
+            Configure AI providers, API keys, and model parameters.
+          </p>
+        </div>
+        <div className="flex gap-2">
+           <button
               onClick={() => void saveJsonConfig()}
               disabled={saving || Boolean(testingProvider)}
-              className="ml-auto rounded-md bg-forge-accent px-4 py-2 text-sm font-semibold text-forge-bg hover:bg-forge-accent-dim disabled:opacity-50"
+              className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
             >
-              {saving ? "Saving…" : "Save JSON configuration"}
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              {saving ? "Saving..." : "Save Configuration"}
             </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2 space-y-4">
+             <div className="rounded-lg border bg-card text-card-foreground shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/50">
+                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <Terminal className="h-3.5 w-3.5" />
+                    <span>config.json</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">JSON</span>
+                </div>
+                <div className="relative">
+                  <textarea
+                    value={jsonText}
+                    onChange={(e) => setJsonText(e.target.value)}
+                    rows={24}
+                    spellCheck={false}
+                    className="flex w-full bg-slate-950 px-4 py-4 text-xs font-mono text-slate-50 placeholder:text-muted-foreground focus-visible:outline-none resize-none leading-relaxed"
+                  />
+                </div>
+             </div>
+             
+             {status && (
+                <div className="rounded-md bg-green-500/15 p-3 text-sm text-green-500 border border-green-500/20">
+                  {status}
+                </div>
+              )}
+              {error && (
+                <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive border border-destructive/20">
+                  {error}
+                </div>
+              )}
           </div>
 
-          {status && <p className="mt-3 text-sm text-green-400">{status}</p>}
-          {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-        </>
+          <div className="space-y-6">
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+              <h3 className="font-semibold leading-none tracking-tight mb-4">Connection Test</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Verify your API keys and connectivity for each provider.
+              </p>
+              
+              <div className="space-y-2">
+                {providerIds.map((providerId) => (
+                  <button
+                    key={providerId}
+                    onClick={() => void testProvider(providerId)}
+                    disabled={Boolean(testingProvider) || saving}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-md border border-input bg-transparent px-4 py-2 text-sm shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50",
+                      testingProvider === providerId && "bg-accent text-accent-foreground"
+                    )}
+                  >
+                    <span className="capitalize">{providerId}</span>
+                    {testingProvider === providerId ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Play className="h-3.5 w-3.5 opacity-50" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+               <h3 className="font-semibold leading-none tracking-tight mb-2">Help</h3>
+               <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside">
+                  <li>Local providers are prioritized.</li>
+                  <li>Use <code className="bg-muted px-1 rounded">[[ENCRYPTED_EXISTS]]</code> to keep existing keys.</li>
+                  <li>Check logs for detailed errors.</li>
+               </ul>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

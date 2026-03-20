@@ -9,6 +9,7 @@ import { z } from "zod";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useToast } from "@/components/ui/use-toast";
+import { Logo } from "@/components/Logo";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email address"),
@@ -49,73 +50,85 @@ function LoginForm() {
   const isLoading = submitting || loading;
 
   return (
-    <div className="rounded-xl border border-forge-border bg-forge-surface p-8 shadow-xl">
-      <h1 className="mb-1 font-sans text-xl font-semibold text-foreground">
-        Sign in
-      </h1>
-      <p className="mb-6 font-mono text-sm text-forge-muted">
+    <div className="w-full max-w-[400px] animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="mb-8 flex flex-col items-center text-center space-y-2">
+        <Logo size="lg" className="mb-4" />
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          Welcome back
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Enter your credentials to access your workspace
+        </p>
+      </div>
+
+      <div className="grid gap-6 rounded-lg border border-border bg-card p-6 shadow-sm">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-muted-foreground">
+              Email
+            </label>
+            <input
+              type="email"
+              autoComplete="email"
+              disabled={isLoading}
+              {...register("email")}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200"
+              placeholder="name@company.com"
+            />
+            {errors.email && (
+              <p className="text-xs text-destructive font-medium">
+                {errors.email.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-muted-foreground">
+                Password
+              </label>
+              <Link
+                href="/forgot-password"
+                className="text-xs text-primary hover:text-primary/80 transition-colors"
+              >
+                Forgot password?
+              </Link>
+            </div>
+            <input
+              type="password"
+              autoComplete="current-password"
+              disabled={isLoading}
+              {...register("password")}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200"
+              placeholder="••••••••"
+            />
+            {errors.password && (
+              <p className="text-xs text-destructive font-medium">
+                {errors.password.message}
+              </p>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="inline-flex w-full items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 mt-2 shadow-sm hover:shadow-md active:scale-[0.98]"
+          >
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isLoading ? "Signing in..." : "Sign in"}
+          </button>
+        </form>
+      </div>
+      
+      <p className="px-8 text-center text-sm text-muted-foreground mt-6">
         Don&apos;t have an account?{" "}
-        <Link href="/register" className="text-forge-accent hover:underline">
-          Register
+        <Link 
+          href="/register" 
+          className="underline underline-offset-4 hover:text-primary transition-colors"
+        >
+          Create an account
         </Link>
       </p>
-
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div>
-          <label className="mb-1.5 block font-mono text-xs font-medium uppercase tracking-wider text-forge-muted">
-            Email
-          </label>
-          <input
-            type="email"
-            autoComplete="email"
-            disabled={isLoading}
-            {...register("email")}
-            className="w-full rounded-md border border-forge-border bg-forge-bg px-3 py-2.5 font-mono text-sm text-foreground placeholder:text-forge-muted/50 focus:border-forge-accent focus:outline-none focus:ring-1 focus:ring-forge-accent/30 disabled:opacity-50"
-            placeholder="you@example.com"
-          />
-          {errors.email && (
-            <p className="mt-1 font-mono text-xs text-red-400">
-              {errors.email.message}
-            </p>
-          )}
-        </div>
-
-        <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <label className="block font-mono text-xs font-medium uppercase tracking-wider text-forge-muted">
-              Password
-            </label>
-            <span
-              className="font-mono text-xs text-forge-muted cursor-not-allowed opacity-50"
-              title="Coming soon"
-            >
-              Forgot password?
-            </span>
-          </div>
-          <input
-            type="password"
-            autoComplete="current-password"
-            disabled={isLoading}
-            {...register("password")}
-            className="w-full rounded-md border border-forge-border bg-forge-bg px-3 py-2.5 font-mono text-sm text-foreground placeholder:text-forge-muted/50 focus:border-forge-accent focus:outline-none focus:ring-1 focus:ring-forge-accent/30 disabled:opacity-50"
-            placeholder="••••••••"
-          />
-          {errors.password && (
-            <p className="mt-1 font-mono text-xs text-red-400">
-              {errors.password.message}
-            </p>
-          )}
-        </div>
-
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="flex w-full items-center justify-center gap-2 rounded-md bg-forge-accent px-4 py-2.5 font-mono text-sm font-semibold text-forge-bg transition-colors hover:bg-forge-accent-dim disabled:opacity-50"
-        >
-          {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-          {isLoading ? "Signing in..." : "Sign in"}
-        </button>
-      </form>
     </div>
   );
 }
@@ -123,7 +136,11 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <Suspense>
-      <LoginForm />
+      <div className="container relative min-h-screen flex-col items-center justify-center grid lg:max-w-none lg:grid-cols-1 lg:px-0">
+        <div className="lg:p-8 flex items-center justify-center h-full w-full">
+          <LoginForm />
+        </div>
+      </div>
     </Suspense>
   );
 }
