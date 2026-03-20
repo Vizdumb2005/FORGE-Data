@@ -1,7 +1,8 @@
 """AI router — BYOK LLM chat with SSE streaming."""
 
 import json
-from typing import AsyncIterator, Literal
+from collections.abc import AsyncIterator
+from typing import Literal
 
 import httpx
 from fastapi import APIRouter
@@ -69,7 +70,7 @@ async def chat(
                 f"{payload.data_context}"
             ),
         )
-        messages = [system_msg] + payload.messages
+        messages = [system_msg, *payload.messages]
     else:
         messages = payload.messages
 
@@ -137,6 +138,7 @@ async def list_ollama_models() -> dict:
 
 
 # ── Streaming helpers ──────────────────────────────────────────────────────────
+
 
 def _resolve_api_key(config: LLMConfig, user) -> str | None:
     """Return the most specific API key available for the given provider."""
@@ -232,26 +234,26 @@ async def _stream_anthropic(
     yield _sse_event("[DONE]")
 
 
-async def _stream_ollama(
-    config: LLMConfig, messages: list[ChatMessage]
-) -> AsyncIterator[str]:
+async def _stream_ollama(config: LLMConfig, messages: list[ChatMessage]) -> AsyncIterator[str]:
     base_url = (config.base_url or settings.ollama_base_url).rstrip("/")
     payload = {
         "model": config.model,
         "messages": [{"role": m.role, "content": m.content} for m in messages],
         "stream": True,
     }
-    async with httpx.AsyncClient(timeout=300) as client:
-        async with client.stream("POST", f"{base_url}/api/chat", json=payload) as response:
-            async for line in response.aiter_lines():
-                if line:
-                    try:
-                        data = json.loads(line)
-                        content = data.get("message", {}).get("content", "")
-                        if content:
-                            yield _sse_event({"content": content})
-                        if data.get("done"):
-                            break
-                    except json.JSONDecodeError:
-                        continue
+    async with (
+        httpx.AsyncClient(timeout=300) as client,
+        client.stream("POST", f"{base_url}/api/chat", json=payload) as response,
+    ):
+        async for line in response.aiter_lines():
+            if line:
+                try:
+                    data = json.loads(line)
+                    content = data.get("message", {}).get("content", "")
+                    if content:
+                        yield _sse_event({"content": content})
+                    if data.get("done"):
+                        break
+                except json.JSONDecodeError:
+                    continue
     yield _sse_event("[DONE]")

@@ -9,7 +9,7 @@ Security utilities:
 import base64
 import hashlib
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from cryptography.fernet import Fernet
@@ -37,6 +37,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 # ── JWT tokens ─────────────────────────────────────────────────────────────────
 
+
 def generate_jti() -> str:
     """Generate a unique JWT ID for token identification/blacklisting."""
     return str(uuid.uuid4())
@@ -45,28 +46,28 @@ def generate_jti() -> str:
 def create_access_token(data: dict[str, Any], jti: str | None = None) -> str:
     """Create a signed JWT access token that expires in ``jwt_access_token_expire_minutes``."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(
-        minutes=settings.jwt_access_token_expire_minutes
+    expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    to_encode.update(
+        {
+            "exp": expire,
+            "type": "access",
+            "jti": jti or generate_jti(),
+        }
     )
-    to_encode.update({
-        "exp": expire,
-        "type": "access",
-        "jti": jti or generate_jti(),
-    })
     return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
 def create_refresh_token(data: dict[str, Any], jti: str | None = None) -> str:
     """Create a signed JWT refresh token that expires in ``jwt_refresh_token_expire_days``."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(
-        days=settings.jwt_refresh_token_expire_days
+    expire = datetime.now(UTC) + timedelta(days=settings.jwt_refresh_token_expire_days)
+    to_encode.update(
+        {
+            "exp": expire,
+            "type": "refresh",
+            "jti": jti or generate_jti(),
+        }
     )
-    to_encode.update({
-        "exp": expire,
-        "type": "refresh",
-        "jti": jti or generate_jti(),
-    })
     return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
@@ -90,12 +91,14 @@ def verify_token(token: str) -> dict[str, Any] | None:
 
 # ── Token hashing (for Redis storage) ────────────────────────────────────────
 
+
 def hash_token(token: str) -> str:
     """SHA-256 hash of a token — used as Redis key for refresh token storage."""
     return hashlib.sha256(token.encode()).hexdigest()
 
 
 # ── Fernet field-level encryption ─────────────────────────────────────────────
+
 
 def _derive_fernet_key() -> bytes:
     """
@@ -117,7 +120,7 @@ _fernet: Fernet | None = None
 
 
 def _get_fernet() -> Fernet:
-    global _fernet  # noqa: PLW0603
+    global _fernet
     if _fernet is None:
         _fernet = Fernet(_derive_fernet_key())
     return _fernet

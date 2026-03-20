@@ -76,9 +76,7 @@ class WorkspaceMember(Base):
     """Join table between User and Workspace with an RBAC role."""
 
     __tablename__ = "workspace_members"
-    __table_args__ = (
-        UniqueConstraint("workspace_id", "user_id", name="uq_workspace_member"),
-    )
+    __table_args__ = (UniqueConstraint("workspace_id", "user_id", name="uq_workspace_member"),)
 
     workspace_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False),
@@ -90,9 +88,7 @@ class WorkspaceMember(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    role: Mapped[str] = mapped_column(
-        String(32), default=MemberRole.viewer.value, nullable=False
-    )
+    role: Mapped[str] = mapped_column(String(32), default=MemberRole.viewer.value, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

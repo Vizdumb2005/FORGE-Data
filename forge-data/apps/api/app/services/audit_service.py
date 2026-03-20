@@ -33,7 +33,7 @@ async def log_event(
         resource_type=resource_type,
         resource_id=resource_id,
         ip_address=ip_address,
-        metadata=metadata or {},
+        meta=metadata or {},
     )
     db.add(entry)
     # Do not commit here — the surrounding request transaction will commit.
@@ -42,6 +42,7 @@ async def log_event(
 
 # ── Pre-built action constants ─────────────────────────────────────────────────
 # Centralised strings prevent typos and make searching audit logs predictable.
+
 
 class AuditAction:
     # Auth
@@ -76,3 +77,15 @@ class AuditAction:
 
     # Connector
     CONNECTOR_TEST = "connector.test"
+
+    # Query engine
+    QUERY_EXECUTE = "query.execute"
+    DATASET_CONNECT = "dataset.connect"
+
+    # Versioning
+    DATASET_VERSION_CREATE = "dataset.version.create"
+    DATASET_VERSION_ROLLBACK = "dataset.version.rollback"
+
+    # Data quality
+    QUALITY_CHECK = "quality.check"
+    QUALITY_RULESET_SAVE = "quality.ruleset.save"

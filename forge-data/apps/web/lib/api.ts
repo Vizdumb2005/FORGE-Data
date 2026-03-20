@@ -5,10 +5,9 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { getAccessToken, getRefreshToken, setTokens, clearTokens } from "./auth";
 
-const BASE_URL =
-  typeof window === "undefined"
-    ? process.env.NEXT_PUBLIC_API_URL ?? "http://api:8000"
-    : ""; // in-browser: use Next.js rewrites (/api/v1/...)
+// All API calls run in the browser (inside useEffect / event handlers).
+// Empty baseURL = relative paths → routed through Next.js rewrites to the backend.
+const BASE_URL = "";
 
 export const api = axios.create({
   baseURL: BASE_URL,
@@ -37,7 +36,14 @@ api.interceptors.response.use(
       _retried?: boolean;
     };
 
-    if (error.response?.status !== 401 || original._retried) {
+    // Network error (no response at all) — log and reject without retry
+    if (!error.response) {
+      const url = original?.url ?? "unknown";
+      console.warn(`[api] Network error reaching ${url}:`, error.message);
+      return Promise.reject(error);
+    }
+
+    if (error.response.status !== 401 || original._retried) {
       return Promise.reject(error);
     }
 
@@ -72,9 +78,9 @@ async function _doRefresh(refreshToken: string): Promise<string | null> {
   try {
     const resp = await axios.post<{
       access_token: string;
-      refresh_token: string;
+      refresh_token?: string;
     }>(`${BASE_URL}/api/v1/auth/refresh`, { refresh_token: refreshToken });
-    setTokens(resp.data.access_token, resp.data.refresh_token);
+    setTokens(resp.data.access_token, resp.data.refresh_token ?? refreshToken);
     return resp.data.access_token;
   } catch {
     clearTokens();

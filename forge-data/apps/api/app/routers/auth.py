@@ -5,7 +5,7 @@ Rate-limited with slowapi: register (3/hour/IP), login (5/minute/IP).
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
@@ -24,8 +24,8 @@ from app.schemas.user import (
     LoginRequest,
     MessageResponse,
     RefreshResponse,
+    RegisterResponse,
     Token,
-    TokenRefresh,
     UserCreate,
     UserRead,
     UserUpdate,
@@ -42,6 +42,7 @@ limiter = Limiter(
     key_func=get_remote_address,
     storage_uri=settings.redis_url,
     strategy="fixed-window",
+    enabled=settings.app_env != "test",
 )
 
 # ── Refresh-token cookie helper ───────────────────────────────────────────────
@@ -75,6 +76,7 @@ def _clear_refresh_cookie(response: Response) -> None:
 
 # ── Background tasks ─────────────────────────────────────────────────────────
 
+
 def _send_verification_email(email: str) -> None:
     # TODO: integrate real SMTP provider (SendGrid / Resend / SES)
     logger.info("VERIFICATION EMAIL (stub): would send to %s", email)
@@ -84,9 +86,10 @@ def _send_verification_email(email: str) -> None:
 # 1. POST /register
 # =============================================================================
 
+
 @router.post(
     "/register",
-    response_model=AuthResponse,
+    response_model=RegisterResponse,
     status_code=201,
     summary="Register a new user account",
 )
@@ -97,7 +100,7 @@ async def register(
     db: DBSession,
     response: Response,
     background_tasks: BackgroundTasks,
-) -> AuthResponse:
+) -> RegisterResponse:
     user = await auth_service.create_user(db, payload)
     await db.flush()
 
@@ -113,12 +116,20 @@ async def register(
         ip_address=request.client.host if request.client else None,
         metadata={"email": user.email},
     )
-    return auth_resp
+
+    # Convert AuthResponse to RegisterResponse (flattened structure)
+    user_read = UserRead.from_orm_with_flags(user)
+    return RegisterResponse(
+        **user_read.model_dump(),
+        access_token=auth_resp.access_token,
+        refresh_token=auth_resp.refresh_token,
+    )
 
 
 # =============================================================================
 # 2. POST /login
 # =============================================================================
+
 
 @router.post(
     "/login",
@@ -149,6 +160,7 @@ async def login(
 # 2b. POST /token — OAuth2 password form (backward compat with existing tests)
 # =============================================================================
 
+
 @router.post(
     "/token",
     response_model=Token,
@@ -158,7 +170,7 @@ async def login(
 async def login_form(
     request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
-    db: DBSession = Depends(),
+    db: DBSession = ...,
 ) -> Token:
     user = await auth_service.authenticate_user(db, form.username, form.password)
     await audit_service.log_event(
@@ -173,6 +185,7 @@ async def login_form(
 # =============================================================================
 # 3. POST /refresh — cookie-based
 # =============================================================================
+
 
 @router.post(
     "/refresh",
@@ -197,25 +210,32 @@ async def refresh(
     if not cookie_token:
         raise InvalidCredentialsException()
 
+    # Validate the token is actually a refresh token before proceeding
+    pre_payload = verify_token(cookie_token)
+    if pre_payload is None or pre_payload.get("type") != "refresh":
+        raise InvalidCredentialsException()
+
     # Try Redis-backed rotation first; fall back to legacy for tests without Redis
     try:
-        refresh_resp, new_refresh = await auth_service.refresh_from_cookie(
-            db, cookie_token
-        )
+        refresh_resp, new_refresh = await auth_service.refresh_from_cookie(db, cookie_token)
         _set_refresh_cookie(response, new_refresh)
-        return refresh_resp
+        return RefreshResponse(
+            access_token=refresh_resp.access_token,
+            refresh_token=new_refresh,
+        )
     except Exception:
         # Legacy path: body-based refresh without Redis (existing test compat)
-        payload = verify_token(cookie_token)
-        if payload is None or payload.get("type") != "refresh":
-            raise InvalidCredentialsException()
         tokens = await auth_service.refresh_tokens(db, cookie_token)
-        return RefreshResponse(access_token=tokens.access_token)
+        return RefreshResponse(
+            access_token=tokens.access_token,
+            refresh_token=tokens.refresh_token,
+        )
 
 
 # =============================================================================
 # 4. POST /logout
 # =============================================================================
+
 
 @router.post(
     "/logout",
@@ -243,7 +263,7 @@ async def logout(
         payload = verify_token(access_token)
         if payload and payload.get("jti"):
             exp = payload.get("exp", 0)
-            remaining = int(exp - datetime.now(timezone.utc).timestamp())
+            remaining = int(exp - datetime.now(UTC).timestamp())
             try:
                 await auth_service.blacklist_access_token(payload["jti"], remaining)
             except Exception as exc:
@@ -264,6 +284,7 @@ async def logout(
 # 5. GET /me
 # =============================================================================
 
+
 @router.get(
     "/me",
     response_model=UserRead,
@@ -276,6 +297,7 @@ async def get_me(current_user: CurrentUser) -> UserRead:
 # =============================================================================
 # 6. PATCH /me
 # =============================================================================
+
 
 @router.patch(
     "/me",
@@ -297,6 +319,7 @@ async def update_me(
 # =============================================================================
 # 7. PATCH /me/api-keys
 # =============================================================================
+
 
 @router.patch(
     "/me/api-keys",
@@ -324,6 +347,7 @@ async def update_api_keys(
 # =============================================================================
 # 8. POST /me/api-keys/test
 # =============================================================================
+
 
 @router.post(
     "/me/api-keys/test",

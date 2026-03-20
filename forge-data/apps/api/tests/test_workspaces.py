@@ -3,8 +3,9 @@
 import pytest
 from httpx import AsyncClient
 
+pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-@pytest.mark.asyncio
+
 async def test_list_workspaces_empty(client: AsyncClient, auth_headers: dict) -> None:
     """A new user should have no workspaces."""
     resp = await client.get("/api/v1/workspaces", headers=auth_headers)
@@ -12,7 +13,6 @@ async def test_list_workspaces_empty(client: AsyncClient, auth_headers: dict) ->
     assert resp.json() == []
 
 
-@pytest.mark.asyncio
 async def test_create_workspace(client: AsyncClient, auth_headers: dict) -> None:
     """Creating a workspace returns 201 and the workspace object."""
     resp = await client.post(
@@ -29,7 +29,6 @@ async def test_create_workspace(client: AsyncClient, auth_headers: dict) -> None
     assert "owner_id" in body
 
 
-@pytest.mark.asyncio
 async def test_create_workspace_unauthenticated(client: AsyncClient) -> None:
     """Creating a workspace without auth should return 401."""
     resp = await client.post(
@@ -39,7 +38,6 @@ async def test_create_workspace_unauthenticated(client: AsyncClient) -> None:
     assert resp.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_get_workspace(client: AsyncClient, auth_headers: dict) -> None:
     """GET /workspaces/{id} returns the workspace if accessible."""
     # Create first
@@ -56,7 +54,6 @@ async def test_get_workspace(client: AsyncClient, auth_headers: dict) -> None:
     assert resp.json()["id"] == ws_id
 
 
-@pytest.mark.asyncio
 async def test_get_workspace_not_found(client: AsyncClient, auth_headers: dict) -> None:
     """Fetching a non-existent workspace returns 404."""
     resp = await client.get(
@@ -66,7 +63,6 @@ async def test_get_workspace_not_found(client: AsyncClient, auth_headers: dict) 
     assert resp.status_code == 404
 
 
-@pytest.mark.asyncio
 async def test_update_workspace(client: AsyncClient, auth_headers: dict) -> None:
     """PATCH updates the workspace fields."""
     create_resp = await client.post(
@@ -87,7 +83,6 @@ async def test_update_workspace(client: AsyncClient, auth_headers: dict) -> None
     assert updated["is_public"] is True
 
 
-@pytest.mark.asyncio
 async def test_delete_workspace(client: AsyncClient, auth_headers: dict) -> None:
     """DELETE returns 204 and workspace is gone."""
     create_resp = await client.post(
@@ -97,18 +92,13 @@ async def test_delete_workspace(client: AsyncClient, auth_headers: dict) -> None
     )
     ws_id = create_resp.json()["id"]
 
-    del_resp = await client.delete(
-        f"/api/v1/workspaces/{ws_id}", headers=auth_headers
-    )
+    del_resp = await client.delete(f"/api/v1/workspaces/{ws_id}", headers=auth_headers)
     assert del_resp.status_code == 204
 
-    get_resp = await client.get(
-        f"/api/v1/workspaces/{ws_id}", headers=auth_headers
-    )
+    get_resp = await client.get(f"/api/v1/workspaces/{ws_id}", headers=auth_headers)
     assert get_resp.status_code == 404
 
 
-@pytest.mark.asyncio
 async def test_list_workspace_members(client: AsyncClient, auth_headers: dict) -> None:
     """Listing members of an owner-only workspace returns empty list."""
     create_resp = await client.post(
@@ -118,15 +108,12 @@ async def test_list_workspace_members(client: AsyncClient, auth_headers: dict) -
     )
     ws_id = create_resp.json()["id"]
 
-    resp = await client.get(
-        f"/api/v1/workspaces/{ws_id}/members", headers=auth_headers
-    )
+    resp = await client.get(f"/api/v1/workspaces/{ws_id}/members", headers=auth_headers)
     assert resp.status_code == 200
     # Owner is not in workspace_members (different from member rows)
     assert isinstance(resp.json(), list)
 
 
-@pytest.mark.asyncio
 async def test_create_and_list_cells(client: AsyncClient, auth_headers: dict) -> None:
     """POST then GET cells in a workspace."""
     # Create workspace
@@ -153,9 +140,7 @@ async def test_create_and_list_cells(client: AsyncClient, auth_headers: dict) ->
     assert cell["language"] == "python"
 
     # List cells
-    list_resp = await client.get(
-        f"/api/v1/workspaces/{ws_id}/cells", headers=auth_headers
-    )
+    list_resp = await client.get(f"/api/v1/workspaces/{ws_id}/cells", headers=auth_headers)
     assert list_resp.status_code == 200
     cells = list_resp.json()
     assert len(cells) == 1

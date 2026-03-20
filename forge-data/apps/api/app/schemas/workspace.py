@@ -6,8 +6,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.workspace import MemberRole
 
-
 # ── Create / Update ──────────────────────────────────────────────────────────
+
 
 class WorkspaceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -23,18 +23,22 @@ class WorkspaceUpdate(BaseModel):
 
 # ── Member management ────────────────────────────────────────────────────────
 
+
 class MemberAdd(BaseModel):
     """Body for POST /{workspace_id}/members — lookup by email."""
+
     email: EmailStr
     role: MemberRole = MemberRole.viewer
 
 
 class MemberRoleUpdate(BaseModel):
     """Body for PATCH /{workspace_id}/members/{user_id}."""
+
     role: MemberRole
 
 
 # ── Read schemas ─────────────────────────────────────────────────────────────
+
 
 class MemberRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -47,12 +51,14 @@ class MemberRead(BaseModel):
 
 class MemberReadWithUser(MemberRead):
     """MemberRead enriched with user display info."""
+
     email: str
     full_name: str
 
 
 class WorkspaceRead(BaseModel):
     """Standard workspace response for listing."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -70,4 +76,5 @@ class WorkspaceRead(BaseModel):
 
 class WorkspaceDetail(WorkspaceRead):
     """Extended workspace response for GET /{workspace_id} — includes members."""
+
     members: list[MemberReadWithUser] = []

@@ -1,6 +1,6 @@
 """Custom HTTP exceptions for FORGE Data API."""
 
-from fastapi import HTTPException, status
+from fastapi import status
 
 
 class ForgeException(Exception):
@@ -24,12 +24,14 @@ class ForgeException(Exception):
 
 # ── 400 Bad Request ────────────────────────────────────────────────────────────
 
+
 class ValidationError(ForgeException):
     def __init__(self, detail: str = "Validation error") -> None:
         super().__init__(status.HTTP_422_UNPROCESSABLE_ENTITY, detail, "VALIDATION_ERROR")
 
 
 # ── 401 Unauthorized ──────────────────────────────────────────────────────────
+
 
 class UnauthorizedException(ForgeException):
     def __init__(self, detail: str = "Authentication required") -> None:
@@ -47,12 +49,11 @@ class InvalidCredentialsException(ForgeException):
 
 class TokenExpiredException(ForgeException):
     def __init__(self) -> None:
-        super().__init__(
-            status.HTTP_401_UNAUTHORIZED, "Token has expired", "TOKEN_EXPIRED"
-        )
+        super().__init__(status.HTTP_401_UNAUTHORIZED, "Token has expired", "TOKEN_EXPIRED")
 
 
 # ── 403 Forbidden ─────────────────────────────────────────────────────────────
+
 
 class ForbiddenException(ForgeException):
     def __init__(self, detail: str = "You do not have permission to perform this action") -> None:
@@ -70,6 +71,7 @@ class InsufficientRoleException(ForgeException):
 
 # ── 404 Not Found ─────────────────────────────────────────────────────────────
 
+
 class NotFoundException(ForgeException):
     def __init__(self, resource: str = "Resource", resource_id: str | None = None) -> None:
         detail = f"{resource} not found"
@@ -79,6 +81,7 @@ class NotFoundException(ForgeException):
 
 
 # ── 409 Conflict ──────────────────────────────────────────────────────────────
+
 
 class ConflictException(ForgeException):
     def __init__(self, detail: str = "Resource already exists") -> None:
@@ -96,6 +99,7 @@ class EmailAlreadyExistsException(ForgeException):
 
 # ── 503 Service Unavailable ───────────────────────────────────────────────────
 
+
 class ServiceUnavailableException(ForgeException):
     def __init__(self, service: str = "Upstream service") -> None:
         super().__init__(
@@ -111,6 +115,7 @@ class JupyterUnavailableException(ServiceUnavailableException):
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
 
 def raise_if_not_found(obj: object | None, resource: str, resource_id: str | None = None) -> None:
     """Raise :class:`NotFoundException` when *obj* is None."""

@@ -90,6 +90,7 @@ export type SourceType =
   | "sqlite"
   | "rest_api"
   | "s3"
+  | "snowflake"
   | "bigquery";
 
 export interface Dataset {
@@ -101,17 +102,123 @@ export interface Dataset {
   storage_path: string | null;
   row_count: number | null;
   column_count: number | null;
-  schema_snapshot: Record<string, unknown> | null;
+  size_bytes: number | null;
+  schema_snapshot: SchemaColumn[] | null;
+  profile_data: DatasetProfile | null;
   has_connection_config: boolean;
   version: number;
   created_at: string;
   updated_at: string;
 }
 
+export interface SchemaColumn {
+  name: string;
+  dtype: string;
+  nullable?: boolean;
+  sample_values?: unknown[];
+}
+
 export interface DatasetPreview {
   columns: string[];
   rows: unknown[][];
   total_rows: number;
+}
+
+// ── Versioning ───────────────────────────────────────────────────────────────
+
+export interface DatasetVersion {
+  id: string;
+  dataset_id: string;
+  version_number: number;
+  message: string | null;
+  schema_snapshot: SchemaColumn[] | null;
+  row_count: number | null;
+  size_bytes: number | null;
+  parquet_path: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface VersionDiff {
+  v1: number;
+  v2: number;
+  row_count_v1: number;
+  row_count_v2: number;
+  row_delta: number;
+  added_columns: string[];
+  removed_columns: string[];
+  type_changes: Array<{ column: string; from: string; to: string }>;
+  stat_changes: Array<{
+    column: string;
+    v1: Record<string, number | null>;
+    v2: Record<string, number | null>;
+    mean_delta: number | null;
+    null_pct_delta: number | null;
+  }>;
+}
+
+// ── Data Quality ─────────────────────────────────────────────────────────────
+
+export interface QualityRule {
+  type: string;
+  column?: string;
+  threshold?: number;
+  pattern?: string;
+  values?: unknown[];
+}
+
+export interface QualityReport {
+  id: string;
+  dataset_id: string;
+  version_number: number | null;
+  passed: number;
+  failed: number;
+  results: QualityCheckResult[];
+  ruleset_id: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface QualityCheckResult {
+  rule_type: string;
+  column: string | null;
+  status: "passed" | "failed";
+  message: string;
+  failing_rows_sample: unknown[];
+}
+
+export interface QualityRuleset {
+  id: string;
+  dataset_id: string;
+  name: string;
+  rules: QualityRule[];
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Profile ──────────────────────────────────────────────────────────────────
+
+export interface ColumnProfile {
+  name: string;
+  dtype: string;
+  distinct_count: number;
+  null_count: number;
+  min?: unknown;
+  max?: unknown;
+  avg?: number | null;
+  sample_values?: unknown[];
+}
+
+export interface DatasetProfile {
+  row_count: number;
+  column_count: number;
+  columns: ColumnProfile[];
+}
+
+export interface DatasetWithProfile {
+  dataset: Dataset;
+  profile: DatasetProfile;
 }
 
 // ── Cell ──────────────────────────────────────────────────────────────────────

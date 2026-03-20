@@ -1,7 +1,6 @@
 """Datasets router — CRUD, file upload, and preview."""
 
 from fastapi import APIRouter, Query, Request, UploadFile
-from fastapi.responses import JSONResponse
 
 from app.dependencies import CurrentUser, DBSession
 from app.schemas.dataset import DatasetCreate, DatasetPreview, DatasetRead, DatasetUpdate

@@ -51,6 +51,7 @@ class DatasetRead(BaseModel):
     # Never expose raw connection_config (may contain passwords)
     has_connection_config: bool = False
     schema_snapshot: list | None = None
+    profile_data: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -70,6 +71,7 @@ class DatasetRead(BaseModel):
             version=dataset.version,
             has_connection_config=bool(dataset.connection_config),
             schema_snapshot=dataset.schema_snapshot,
+            profile_data=dataset.profile_data,
             created_at=dataset.created_at,
             updated_at=dataset.updated_at,
         )

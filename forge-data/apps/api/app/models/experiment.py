@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -94,21 +94,15 @@ class ExperimentRun(Base):
     )
 
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    status: Mapped[str] = mapped_column(
-        String(32), default=RunStatus.running.value, nullable=False
-    )
+    status: Mapped[str] = mapped_column(String(32), default=RunStatus.running.value, nullable=False)
 
     # Snapshot of key metrics/params at end of run
     metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     tags: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    ended_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Duration in seconds (populated at run end)
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -117,9 +111,7 @@ class ExperimentRun(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    experiment: Mapped["Experiment"] = relationship(
-        "Experiment", back_populates="runs"
-    )
+    experiment: Mapped["Experiment"] = relationship("Experiment", back_populates="runs")
 
     def __repr__(self) -> str:
         return f"<ExperimentRun id={self.id!r} status={self.status!r}>"

@@ -12,8 +12,9 @@ export default function ExperimentsPage() {
 
   useEffect(() => {
     api
-      .get<Experiment[]>("/api/v1/experiments")
+      .get<Experiment[]>("/api/v1/experiments/")
       .then((r) => setExperiments(r.data))
+      .catch(() => setExperiments([]))
       .finally(() => setLoading(false));
   }, []);
 

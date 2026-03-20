@@ -3,8 +3,9 @@
 import pytest
 from httpx import AsyncClient
 
+pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-@pytest.mark.asyncio
+
 async def test_root_health(client: AsyncClient) -> None:
     """GET /api/health should return 200 with status ok."""
     resp = await client.get("/api/health")
@@ -14,7 +15,6 @@ async def test_root_health(client: AsyncClient) -> None:
     assert "version" in body
 
 
-@pytest.mark.asyncio
 async def test_liveness_probe(client: AsyncClient) -> None:
     """GET /api/v1/health/live should return 200."""
     resp = await client.get("/api/v1/health/live")
@@ -25,7 +25,6 @@ async def test_liveness_probe(client: AsyncClient) -> None:
     assert "version" in body
 
 
-@pytest.mark.asyncio
 async def test_openapi_schema_available(client: AsyncClient) -> None:
     """OpenAPI JSON schema should be accessible at /api/openapi.json."""
     resp = await client.get("/api/openapi.json")
@@ -35,7 +34,6 @@ async def test_openapi_schema_available(client: AsyncClient) -> None:
     assert schema["info"]["version"] == "0.1.0"
 
 
-@pytest.mark.asyncio
 async def test_all_router_prefixes_registered(client: AsyncClient) -> None:
     """Verify all major API paths appear in the OpenAPI spec."""
     resp = await client.get("/api/openapi.json")
@@ -54,6 +52,6 @@ async def test_all_router_prefixes_registered(client: AsyncClient) -> None:
         "/api/v1/experiments",
     ]
     for prefix in expected_prefixes:
-        assert any(p.startswith(prefix) for p in paths), (
-            f"Expected a path starting with {prefix!r} in OpenAPI spec"
-        )
+        assert any(
+            p.startswith(prefix) for p in paths
+        ), f"Expected a path starting with {prefix!r} in OpenAPI spec"

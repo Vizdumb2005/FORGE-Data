@@ -8,9 +8,10 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import app.models  # noqa: F401 — side-effect: registers all ORM classes on Base.metadata
+
 # Import Base and all models so Alembic discovers their metadata
 from app.database import Base
-import app.models  # noqa: F401 — side-effect: registers all ORM classes on Base.metadata
 
 config = context.config
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -17,7 +17,7 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-export default function LoginPage() {
+function LoginForm() {
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? undefined;
 
@@ -85,12 +85,12 @@ export default function LoginPage() {
             <label className="block font-mono text-xs font-medium uppercase tracking-wider text-forge-muted">
               Password
             </label>
-            <Link
-              href="/forgot-password"
-              className="font-mono text-xs text-forge-muted hover:text-forge-accent"
+            <span
+              className="font-mono text-xs text-forge-muted cursor-not-allowed opacity-50"
+              title="Coming soon"
             >
               Forgot password?
-            </Link>
+            </span>
           </div>
           <input
             type="password"
@@ -117,5 +117,13 @@ export default function LoginPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

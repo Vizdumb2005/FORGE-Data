@@ -54,9 +54,7 @@ class Cell(Base):
     height: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
 
     # ── Cell kind & language ───────────────────────────────────────────────
-    cell_type: Mapped[str] = mapped_column(
-        String(32), default=CellType.code.value, nullable=False
-    )
+    cell_type: Mapped[str] = mapped_column(String(32), default=CellType.code.value, nullable=False)
     language: Mapped[str] = mapped_column(
         String(32), default=CellLanguage.python.value, nullable=False
     )

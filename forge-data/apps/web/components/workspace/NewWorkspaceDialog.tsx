@@ -52,9 +52,13 @@ export default function NewWorkspaceDialog({
       toast({ title: "Workspace created", description: data.name });
       reset();
       onOpenChange(false);
-    } catch {
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? "Something went wrong. Is the API server running?";
       toast({
         title: "Failed to create workspace",
+        description: typeof detail === "string" ? detail : undefined,
         variant: "destructive",
       });
     } finally {

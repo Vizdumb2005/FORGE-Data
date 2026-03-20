@@ -14,14 +14,14 @@ from app.routers import (
 )
 
 __all__ = [
-    "health",
+    "ai",
     "auth",
+    "cells",
+    "connectors",
+    "datasets",
+    "execute",
+    "experiments",
+    "health",
     "users",
     "workspaces",
-    "datasets",
-    "cells",
-    "execute",
-    "ai",
-    "connectors",
-    "experiments",
 ]

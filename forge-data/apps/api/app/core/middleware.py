@@ -4,6 +4,7 @@ import asyncio
 import logging
 import time
 import uuid
+from typing import ClassVar
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -41,6 +42,7 @@ def _extract_user_id(request: Request) -> str | None:
 
 # ── Request Logging Middleware ─────────────────────────────────────────────────
 
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Log every request with method, path, status code, and duration."""
 
@@ -70,6 +72,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 # ── Audit Logging Middleware ───────────────────────────────────────────────────
 
+
 class AuditMiddleware(BaseHTTPMiddleware):
     """
     Capture every mutating request and write an AuditLog row.
@@ -77,6 +80,8 @@ class AuditMiddleware(BaseHTTPMiddleware):
     The DB write happens in a background task so it never delays the response.
     Failures in the background task are logged but not surfaced to the client.
     """
+
+    _background_tasks: ClassVar[set[asyncio.Task]] = set()
 
     async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
@@ -90,7 +95,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
             ip_address = _get_client_ip(request)
             action = f"{request.method.lower()}.{request.url.path.strip('/').replace('/', '.')}"
 
-            asyncio.ensure_future(
+            task = asyncio.create_task(
                 self._write_audit_log(
                     user_id=user_id,
                     action=action,
@@ -100,6 +105,8 @@ class AuditMiddleware(BaseHTTPMiddleware):
                     status_code=response.status_code,
                 )
             )
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
 
         return response
 
@@ -122,7 +129,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
                     user_id=user_id,
                     action=action,
                     ip_address=ip_address,
-                    metadata={
+                    meta={
                         "method": method,
                         "path": path,
                         "status_code": status_code,
@@ -130,5 +137,5 @@ class AuditMiddleware(BaseHTTPMiddleware):
                 )
                 session.add(log)
                 await session.commit()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error("Failed to write audit log: %s", exc)

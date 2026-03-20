@@ -16,10 +16,8 @@ router = APIRouter()
     response_model=list[CellRead],
     summary="List all cells in a workspace",
 )
-async def list_cells(
-    workspace_id: str, current_user: CurrentUser, db: DBSession
-) -> list[CellRead]:
-    await workspace_service.get_workspace(db, workspace_id, current_user.id)
+async def list_cells(workspace_id: str, current_user: CurrentUser, db: DBSession) -> list[CellRead]:
+    await workspace_service.get_workspace_for_user(db, workspace_id, current_user.id)
     result = await db.execute(
         select(Cell)
         .where(Cell.workspace_id == workspace_id)
@@ -40,7 +38,7 @@ async def create_cell(
     current_user: CurrentUser,
     db: DBSession,
 ) -> CellRead:
-    await workspace_service.get_workspace(db, workspace_id, current_user.id)
+    await workspace_service.get_workspace_for_user(db, workspace_id, current_user.id)
     cell = Cell(
         workspace_id=workspace_id,
         cell_type=payload.cell_type.value,
@@ -53,6 +51,7 @@ async def create_cell(
     )
     db.add(cell)
     await db.flush()
+    await db.refresh(cell)
     return CellRead.model_validate(cell)
 
 
@@ -64,7 +63,7 @@ async def create_cell(
 async def get_cell(
     workspace_id: str, cell_id: str, current_user: CurrentUser, db: DBSession
 ) -> CellRead:
-    await workspace_service.get_workspace(db, workspace_id, current_user.id)
+    await workspace_service.get_workspace_for_user(db, workspace_id, current_user.id)
     cell = await _get_cell_or_404(db, workspace_id, cell_id)
     return CellRead.model_validate(cell)
 
@@ -81,7 +80,7 @@ async def update_cell(
     current_user: CurrentUser,
     db: DBSession,
 ) -> CellRead:
-    await workspace_service.get_workspace(db, workspace_id, current_user.id)
+    await workspace_service.get_workspace_for_user(db, workspace_id, current_user.id)
     cell = await _get_cell_or_404(db, workspace_id, cell_id)
 
     if payload.content is not None:
@@ -100,6 +99,7 @@ async def update_cell(
         cell.cell_type = payload.cell_type.value
 
     await db.flush()
+    await db.refresh(cell)
     return CellRead.model_validate(cell)
 
 
@@ -111,7 +111,7 @@ async def update_cell(
 async def delete_cell(
     workspace_id: str, cell_id: str, current_user: CurrentUser, db: DBSession
 ) -> None:
-    await workspace_service.get_workspace(db, workspace_id, current_user.id)
+    await workspace_service.get_workspace_for_user(db, workspace_id, current_user.id)
     cell = await _get_cell_or_404(db, workspace_id, cell_id)
     await db.delete(cell)
     await db.flush()

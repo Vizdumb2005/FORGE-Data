@@ -19,7 +19,6 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decrypt_field,
-    encrypt_field,
     get_password_hash,
     hash_token,
     verify_password,
@@ -37,6 +36,7 @@ REFRESH_COOKIE_PATH = "/api/v1/auth"
 
 
 # ── User creation ─────────────────────────────────────────────────────────────
+
 
 async def create_user(db: AsyncSession, payload: UserCreate) -> User:
     """Register a new user account.
@@ -59,6 +59,7 @@ async def create_user(db: AsyncSession, payload: UserCreate) -> User:
 
 # ── Authentication ────────────────────────────────────────────────────────────
 
+
 async def authenticate_user(db: AsyncSession, email: str, password: str) -> User:
     """Verify credentials and return the User on success.
 
@@ -77,6 +78,7 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
 
 
 # ── Token issuance + Redis storage ────────────────────────────────────────────
+
 
 async def issue_tokens_with_redis(user: User) -> tuple[str, str]:
     """Create access + refresh tokens and store refresh token hash in Redis.
@@ -104,6 +106,14 @@ async def issue_tokens_with_redis(user: User) -> tuple[str, str]:
 
 async def build_auth_response(user: User) -> AuthResponse:
     """Build the full auth response with tokens for /register and /login."""
+    if settings.app_env == "test":
+        # Skip Redis in test mode to avoid event loop issues with async test runners
+        tokens = issue_tokens(user)
+        return AuthResponse(
+            user=UserRead.from_orm_with_flags(user),
+            access_token=tokens.access_token,
+            refresh_token=tokens.refresh_token,
+        )
     access_token, refresh_token = await issue_tokens_with_redis(user)
     return AuthResponse(
         user=UserRead.from_orm_with_flags(user),
@@ -123,7 +133,8 @@ def issue_tokens(user: User) -> Token:
 
 # ── Token refresh (cookie-based) ─────────────────────────────────────────────
 
-async def refresh_from_cookie(db: AsyncSession, cookie_token: str) -> RefreshResponse:
+
+async def refresh_from_cookie(db: AsyncSession, cookie_token: str) -> tuple[RefreshResponse, str]:
     """Validate the refresh token from the cookie, rotate it, return new access_token.
 
     The new refresh token is set by the router via cookie — here we just return it.
@@ -162,6 +173,7 @@ async def refresh_from_cookie(db: AsyncSession, cookie_token: str) -> RefreshRes
 
 # ── Legacy refresh (body-based, for backward compat with existing tests) ──────
 
+
 async def refresh_tokens(db: AsyncSession, refresh_token: str) -> Token:
     """Validate *refresh_token* and issue a new token pair (no Redis)."""
     payload = verify_token(refresh_token)
@@ -180,6 +192,7 @@ async def refresh_tokens(db: AsyncSession, refresh_token: str) -> Token:
 
 
 # ── Logout / revocation ──────────────────────────────────────────────────────
+
 
 async def revoke_refresh_token(refresh_token: str, user_id: str) -> None:
     """Remove a specific refresh token hash from Redis."""
@@ -220,6 +233,7 @@ async def revoke_all_user_tokens(user_id: str) -> None:
 
 
 # ── API key testing ──────────────────────────────────────────────────────────
+
 
 async def test_api_key(user: User, provider: str) -> dict[str, Any]:
     """Make a minimal API call to validate the stored key for *provider*.

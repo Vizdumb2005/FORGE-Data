@@ -1,37 +1,55 @@
-"""Execute router — run code/SQL cells via Jupyter Kernel Gateway."""
+"""Execute router — run code/SQL/R cells via Jupyter Kernel Gateway with SSE streaming."""
 
 import json
-import uuid
-from datetime import datetime, timezone
+import logging
+from datetime import UTC, datetime
+from typing import Any
 
-import httpx
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request
 from sqlalchemy import select
+from sse_starlette.sse import EventSourceResponse
 
-from app.config import settings
-from app.core.exceptions import JupyterUnavailableException, NotFoundException
-from app.dependencies import CurrentUser, DBSession
+from app.core.exceptions import NotFoundException
+from app.core.query_engine import QueryError
+from app.dependencies import CurrentUser, DBSession, KernelMgr, QueryEngine
 from app.models.cell import Cell
-from app.schemas.cell import CellOutput, ExecuteRequest, ExecuteResponse
-from app.services import workspace_service
+from app.services import audit_service, workspace_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_JUPYTER_TIMEOUT = 120  # seconds
+
+# ═════════════════════════════════════════════════════════════════════════════
+# POST /workspaces/{wid}/cells/{cid}/run — Execute a cell (SSE)
+# ═════════════════════════════════════════════════════════════════════════════
 
 
 @router.post(
-    "/{workspace_id}/cells/{cell_id}/execute",
-    response_model=ExecuteResponse,
-    summary="Execute a cell and return the output",
+    "/{workspace_id}/cells/{cell_id}/run",
+    summary="Execute a cell and stream output via SSE",
 )
-async def execute_cell(
+async def run_cell(
     workspace_id: str,
     cell_id: str,
-    payload: ExecuteRequest,
     current_user: CurrentUser,
     db: DBSession,
-) -> ExecuteResponse:
+    kernel_mgr: KernelMgr,
+    query_engine: QueryEngine,
+    request: Request,
+):
+    """
+    Execute a workspace cell.  For SQL cells the query is routed to the
+    FederatedQueryEngine for immediate results.  For Python/R cells the code
+    runs in a shared Jupyter kernel and output is streamed as Server-Sent Events.
+
+    SSE event types:
+      ``stream``   — stdout/stderr text
+      ``result``   — execute_result (text/html, text/plain, …)
+      ``image``    — display_data containing image/png
+      ``error``    — execution error (ename, evalue, traceback)
+      ``complete`` — final summary with execution_time_ms and status
+    """
     await workspace_service.get_workspace(db, workspace_id, current_user.id)
 
     result = await db.execute(
@@ -41,182 +59,240 @@ async def execute_cell(
     if cell is None:
         raise NotFoundException("Cell", cell_id)
 
-    source = payload.source if payload.source is not None else cell.content
-    kernel_id = payload.kernel_id or cell.kernel_id
+    code = cell.content
+    language = cell.language or "python"
 
-    # Obtain or create a Jupyter kernel
-    kernel_id = await _ensure_kernel(kernel_id)
+    # ── SQL path — route to FederatedQueryEngine ──────────────────────────
+    if language == "sql":
+        return await _execute_sql(
+            db=db,
+            cell=cell,
+            code=code,
+            workspace_id=workspace_id,
+            user=current_user,
+            engine=query_engine,
+            request=request,
+        )
 
-    # Execute code via Jupyter REST + WebSocket protocol
-    output = await _execute_code(kernel_id, source)
+    # ── Python / R path — stream via Jupyter kernel (SSE) ────────────────
+    # Extract auth token for context injection
+    auth_header = request.headers.get("authorization", "")
+    auth_token = auth_header.replace("Bearer ", "") if auth_header else ""
 
-    # Persist result back to the cell
-    cell.output = output.model_dump()
-    cell.kernel_id = kernel_id
-    cell.last_executed_at = datetime.now(timezone.utc)
-    await db.flush()
+    async def event_generator():
+        try:
+            # Ensure kernel exists and inject context on first use
+            kernel_id = await kernel_mgr.get_or_create_kernel(workspace_id)
 
-    return ExecuteResponse(cell_id=cell_id, output=output, kernel_id=kernel_id)
+            # Inject FORGE helpers if this is the first execution
+            if not cell.kernel_id or cell.kernel_id != kernel_id:
+                try:
+                    await kernel_mgr.inject_context(
+                        workspace_id,
+                        current_user.id,
+                        auth_token,
+                    )
+                except Exception as exc:
+                    logger.warning("Context injection failed: %s", exc)
+
+            collected: list[dict[str, Any]] = []
+
+            async def on_output(event: dict[str, Any]) -> None:
+                collected.append(event)
+
+            exec_result = await kernel_mgr.execute_code(
+                workspace_id,
+                code,
+                on_output=on_output,
+            )
+
+            # Stream collected outputs as SSE events
+            for event in collected:
+                yield {"event": event.get("type", "stream"), "data": json.dumps(event)}
+
+            # Build final output for DB persistence
+            output_json: dict[str, Any] = {
+                "outputs": exec_result.outputs,
+                "execution_count": exec_result.execution_count,
+                "execution_time_ms": exec_result.execution_time_ms,
+                "status": exec_result.status,
+            }
+
+            # Persist to cell
+            cell.output = output_json
+            cell.kernel_id = kernel_id
+            cell.last_executed_at = datetime.now(UTC)
+
+            # Send complete event
+            yield {
+                "event": "complete",
+                "data": json.dumps(
+                    {
+                        "type": "complete",
+                        "status": exec_result.status,
+                        "execution_time_ms": exec_result.execution_time_ms,
+                        "execution_count": exec_result.execution_count,
+                    }
+                ),
+            }
+
+        except Exception as exc:
+            logger.error("Cell execution failed: %s", exc)
+            yield {
+                "event": "error",
+                "data": json.dumps(
+                    {
+                        "type": "error",
+                        "ename": type(exc).__name__,
+                        "evalue": str(exc),
+                        "traceback": [],
+                    }
+                ),
+            }
+            yield {
+                "event": "complete",
+                "data": json.dumps(
+                    {
+                        "type": "complete",
+                        "status": "error",
+                        "execution_time_ms": 0,
+                    }
+                ),
+            }
+
+    await audit_service.log_event(
+        db,
+        action=audit_service.AuditAction.CELL_EXECUTE,
+        user_id=current_user.id,
+        workspace_id=workspace_id,
+        resource_type="cell",
+        resource_id=cell_id,
+        ip_address=request.client.host if request.client else None,
+        metadata={"language": language, "code_length": len(code)},
+    )
+
+    return EventSourceResponse(event_generator())
 
 
-@router.delete(
-    "/{workspace_id}/kernels/{kernel_id}",
-    status_code=204,
-    summary="Shut down a Jupyter kernel",
+# ═════════════════════════════════════════════════════════════════════════════
+# Kernel management endpoints
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+@router.post(
+    "/{workspace_id}/kernel/restart",
+    summary="Restart the workspace kernel",
 )
-async def shutdown_kernel(
+async def restart_kernel(
     workspace_id: str,
-    kernel_id: str,
     current_user: CurrentUser,
     db: DBSession,
-) -> None:
+    kernel_mgr: KernelMgr,
+) -> dict[str, str]:
     await workspace_service.get_workspace(db, workspace_id, current_user.id)
-    await _delete_kernel(kernel_id)
+    await kernel_mgr.restart_kernel(workspace_id)
+    return {"status": "restarted"}
 
 
-# ── Jupyter Kernel Gateway helpers ────────────────────────────────────────────
+@router.post(
+    "/{workspace_id}/kernel/interrupt",
+    summary="Interrupt the running execution",
+)
+async def interrupt_kernel(
+    workspace_id: str,
+    current_user: CurrentUser,
+    db: DBSession,
+    kernel_mgr: KernelMgr,
+) -> dict[str, str]:
+    await workspace_service.get_workspace(db, workspace_id, current_user.id)
+    await kernel_mgr.interrupt_kernel(workspace_id)
+    return {"status": "interrupted"}
 
-async def _ensure_kernel(kernel_id: str | None) -> str:
-    """Return *kernel_id* if alive, or start a new Python 3 kernel."""
-    if kernel_id:
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                r = await client.get(
-                    f"{settings.jupyter_gateway_url}/api/kernels/{kernel_id}"
-                )
-            if r.status_code == 200:
-                return kernel_id
-        except Exception:
-            pass  # fall through to create a new kernel
 
-    # Create a new kernel
+@router.get(
+    "/{workspace_id}/kernel/status",
+    summary="Get kernel status",
+)
+async def kernel_status(
+    workspace_id: str,
+    current_user: CurrentUser,
+    db: DBSession,
+    kernel_mgr: KernelMgr,
+) -> dict[str, Any]:
+    await workspace_service.get_workspace(db, workspace_id, current_user.id)
+    return await kernel_mgr.get_kernel_status(workspace_id)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Private helpers
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+async def _execute_sql(
+    *,
+    db: Any,
+    cell: Cell,
+    code: str,
+    workspace_id: str,
+    user: Any,
+    engine: Any,
+    request: Request,
+) -> dict[str, Any]:
+    """Execute SQL via the FederatedQueryEngine and return the result immediately."""
+    import time
+
+    start = time.perf_counter()
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            headers = {}
-            if settings.jupyter_token:
-                headers["Authorization"] = f"token {settings.jupyter_token}"
-            r = await client.post(
-                f"{settings.jupyter_gateway_url}/api/kernels",
-                json={"name": "python3"},
-                headers=headers,
-            )
-            r.raise_for_status()
-            return r.json()["id"]
-    except Exception as exc:
-        raise JupyterUnavailableException() from exc
+        query_result = await engine.execute_query(user.id, code)
+    except QueryError as exc:
+        output: dict[str, Any] = {
+            "outputs": [
+                {
+                    "type": "error",
+                    "ename": "QueryError",
+                    "evalue": exc.error,
+                    "traceback": [],
+                }
+            ],
+            "execution_count": None,
+            "execution_time_ms": exc.execution_time_ms or 0,
+            "status": "error",
+        }
+        cell.output = output
+        cell.last_executed_at = datetime.now(UTC)
+        return output
 
-
-async def _execute_code(kernel_id: str, code: str) -> CellOutput:
-    """
-    Send *code* to the Jupyter kernel over its WebSocket channel and collect output.
-
-    Implements a minimal subset of the Jupyter messaging protocol (v5.x):
-      https://jupyter-client.readthedocs.io/en/stable/messaging.html
-    """
-    import websockets
-
-    ws_url = (
-        settings.jupyter_gateway_url.replace("http://", "ws://")
-        .replace("https://", "wss://")
-        + f"/api/kernels/{kernel_id}/channels"
-    )
-    if settings.jupyter_token:
-        ws_url += f"?token={settings.jupyter_token}"
-
-    msg_id = str(uuid.uuid4())
-    execute_msg = {
-        "header": {
-            "msg_id": msg_id,
-            "username": "forge",
-            "session": str(uuid.uuid4()),
-            "msg_type": "execute_request",
-            "version": "5.3",
-        },
-        "parent_header": {},
-        "metadata": {},
-        "content": {
-            "code": code,
-            "silent": False,
-            "store_history": True,
-            "user_expressions": {},
-            "allow_stdin": False,
-        },
+    elapsed = round((time.perf_counter() - start) * 1000, 1)
+    output = {
+        "outputs": [
+            {
+                "type": "execute_result",
+                "data": {
+                    "text/plain": f"{query_result['row_count']} rows x {len(query_result['columns'])} columns",
+                    "application/json": {
+                        "columns": query_result["columns"],
+                        "rows": query_result["rows"],
+                        "row_count": query_result["row_count"],
+                    },
+                },
+            }
+        ],
+        "execution_count": None,
+        "execution_time_ms": query_result.get("execution_time_ms", elapsed),
+        "status": "ok",
     }
+    cell.output = output
+    cell.last_executed_at = datetime.now(UTC)
 
-    collected_text: list[str] = []
-    collected_data: dict = {}
-    status = "ok"
-    error_name: str | None = None
-    error_value: str | None = None
-    traceback: list[str] | None = None
-    execution_count: int | None = None
-
-    try:
-        async with websockets.connect(ws_url, open_timeout=10) as ws:
-            await ws.send(json.dumps(execute_msg))
-
-            # Read messages until we receive execute_reply
-            deadline = _JUPYTER_TIMEOUT
-            while deadline > 0:
-                raw = await asyncio.wait_for(ws.recv(), timeout=5)
-                deadline -= 5
-                msg = json.loads(raw)
-
-                if msg.get("parent_header", {}).get("msg_id") != msg_id:
-                    continue
-
-                msg_type = msg.get("msg_type")
-                content = msg.get("content", {})
-
-                if msg_type == "stream":
-                    collected_text.append(content.get("text", ""))
-
-                elif msg_type in ("display_data", "execute_result"):
-                    collected_data = content.get("data", {})
-                    execution_count = content.get("execution_count")
-
-                elif msg_type == "error":
-                    status = "error"
-                    error_name = content.get("ename", "Error")
-                    error_value = content.get("evalue", "")
-                    traceback = content.get("traceback", [])
-
-                elif msg_type == "execute_reply":
-                    if content.get("status") == "error":
-                        status = "error"
-                    break
-
-    except Exception as exc:
-        raise JupyterUnavailableException() from exc
-
-    return CellOutput(
-        status=status,
-        output_type=(
-            "error" if status == "error"
-            else ("execute_result" if collected_data else "stream")
-        ),
-        text="".join(collected_text) or None,
-        data=collected_data or None,
-        ename=error_name,
-        evalue=error_value,
-        traceback=traceback,
-        execution_count=execution_count,
+    await audit_service.log_event(
+        db,
+        action=audit_service.AuditAction.QUERY_EXECUTE,
+        user_id=user.id,
+        workspace_id=workspace_id,
+        resource_type="cell",
+        resource_id=cell.id,
+        ip_address=request.client.host if request.client else None,
+        metadata={"sql": code[:500], "row_count": query_result["row_count"]},
     )
 
-
-async def _delete_kernel(kernel_id: str) -> None:
-    try:
-        headers = {}
-        if settings.jupyter_token:
-            headers["Authorization"] = f"token {settings.jupyter_token}"
-        async with httpx.AsyncClient(timeout=5) as client:
-            await client.delete(
-                f"{settings.jupyter_gateway_url}/api/kernels/{kernel_id}",
-                headers=headers,
-            )
-    except Exception:
-        pass  # best-effort — kernel may already be dead
-
-
-# Add missing import
-import asyncio  # noqa: E402
+    return output

@@ -16,7 +16,7 @@ _client: aioredis.Redis | None = None
 
 async def get_redis() -> aioredis.Redis:
     """Return the shared async Redis client, creating it lazily on first call."""
-    global _pool, _client  # noqa: PLW0603
+    global _pool, _client
     if _client is None:
         _pool = aioredis.ConnectionPool.from_url(
             settings.redis_url,
@@ -29,7 +29,7 @@ async def get_redis() -> aioredis.Redis:
 
 async def close_redis() -> None:
     """Shut down the Redis connection pool (call during app shutdown)."""
-    global _pool, _client  # noqa: PLW0603
+    global _pool, _client
     if _client is not None:
         await _client.aclose()
         _client = None
@@ -51,6 +51,6 @@ async def ping_redis() -> bool:
 # ── Key prefixes ──────────────────────────────────────────────────────────────
 # Centralised so every module uses consistent keys.
 
-REFRESH_TOKEN_PREFIX = "forge:rt:"          # forge:rt:{sha256} → user_id
-USER_REFRESH_SET_PREFIX = "forge:user_rts:" # forge:user_rts:{user_id} → set of hashes
-ACCESS_BLACKLIST_PREFIX = "forge:bl:"       # forge:bl:{jti} → "1"
+REFRESH_TOKEN_PREFIX = "forge:rt:"  # forge:rt:{sha256} → user_id
+USER_REFRESH_SET_PREFIX = "forge:user_rts:"  # forge:user_rts:{user_id} → set of hashes
+ACCESS_BLACKLIST_PREFIX = "forge:bl:"  # forge:bl:{jti} → "1"

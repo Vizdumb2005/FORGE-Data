@@ -29,6 +29,7 @@ router = APIRouter()
 # 1. POST / — Create a workspace
 # =============================================================================
 
+
 @router.post(
     "/",
     response_model=WorkspaceRead,
@@ -71,6 +72,7 @@ async def create_workspace(
 # 2. GET / — List accessible workspaces
 # =============================================================================
 
+
 @router.get(
     "/",
     response_model=list[WorkspaceRead],
@@ -86,6 +88,7 @@ async def list_workspaces(
 # =============================================================================
 # 3. GET /{workspace_id} — Get workspace detail
 # =============================================================================
+
 
 @router.get(
     "/{workspace_id}",
@@ -103,6 +106,7 @@ async def get_workspace(
 # =============================================================================
 # 4. PATCH /{workspace_id} — Update workspace
 # =============================================================================
+
 
 @router.patch(
     "/{workspace_id}",
@@ -148,6 +152,7 @@ async def update_workspace(
 # 5. DELETE /{workspace_id} — Soft delete workspace
 # =============================================================================
 
+
 @router.delete(
     "/{workspace_id}",
     status_code=204,
@@ -172,8 +177,33 @@ async def delete_workspace(
 
 
 # =============================================================================
-# 6. POST /{workspace_id}/members — Add member by email
+# 6. GET /{workspace_id}/members — List workspace members
 # =============================================================================
+
+
+@router.get(
+    "/{workspace_id}/members",
+    response_model=list[MemberRead],
+    summary="List members of a workspace",
+)
+async def list_members(
+    workspace: Workspace = Depends(require_workspace_role("viewer", "analyst", "editor", "admin")),
+    db: DBSession = ...,
+) -> list[MemberRead]:
+    from sqlalchemy import select
+
+    from app.models.workspace import WorkspaceMember
+
+    result = await db.execute(
+        select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace.id)
+    )
+    return [MemberRead.model_validate(m) for m in result.scalars().all()]
+
+
+# =============================================================================
+# 7. POST /{workspace_id}/members — Add member by email
+# =============================================================================
+
 
 @router.post(
     "/{workspace_id}/members",
@@ -206,6 +236,7 @@ async def add_member(
 # 7. PATCH /{workspace_id}/members/{user_id} — Change member role
 # =============================================================================
 
+
 @router.patch(
     "/{workspace_id}/members/{user_id}",
     response_model=MemberRead,
@@ -219,9 +250,7 @@ async def update_member_role(
     current_user: CurrentUser = ...,
     db: DBSession = ...,
 ) -> MemberRead:
-    member = await workspace_service.update_member_role(
-        db, workspace.id, user_id, payload
-    )
+    member = await workspace_service.update_member_role(db, workspace.id, user_id, payload)
     await audit_service.log_event(
         db,
         action=audit_service.AuditAction.WORKSPACE_MEMBER_UPDATE,
@@ -238,6 +267,7 @@ async def update_member_role(
 # =============================================================================
 # 8. DELETE /{workspace_id}/members/{user_id} — Remove member
 # =============================================================================
+
 
 @router.delete(
     "/{workspace_id}/members/{user_id}",

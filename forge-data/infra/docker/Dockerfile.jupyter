@@ -1,0 +1,28 @@
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends gcc && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    jupyter_kernel_gateway==3.0.1 \
+    ipykernel \
+    pandas \
+    numpy \
+    matplotlib \
+    seaborn
+
+# Register the Python kernel
+RUN python -m ipykernel install --user
+
+COPY jupyter_kernel_gateway_config.py /etc/jupyter/jupyter_kernel_gateway_config.py
+
+EXPOSE 8888
+
+ENV JUPYTER_TOKEN=""
+CMD ["jupyter", "kernelgateway", \
+     "--config=/etc/jupyter/jupyter_kernel_gateway_config.py", \
+     "--KernelGatewayApp.auth_token=", \
+     "--IdentityProvider.token=", \
+     "--ServerApp.allow_unauthenticated_access=True", \
+     "--ServerApp.token=", \
+     "--ServerApp.disable_check_xsrf=True"]

@@ -41,6 +41,6 @@ celery_app.conf.update(
 
 
 @celery_app.task(bind=True, name="app.workers.celery_app.health_check")
-def health_check(self):  # noqa: ARG001
+def health_check(self):
     """Trivial task used to verify the Celery worker is reachable."""
     return {"status": "ok"}

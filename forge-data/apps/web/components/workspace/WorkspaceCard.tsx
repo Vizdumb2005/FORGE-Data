@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Users, Clock } from "lucide-react";
-import { formatDate, initials } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import type { Workspace } from "@/types";

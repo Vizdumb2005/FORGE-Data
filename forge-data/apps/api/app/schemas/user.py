@@ -6,8 +6,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.user import LLMProvider
 
-
 # ── Registration / Login ─────────────────────────────────────────────────────
+
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -45,6 +45,7 @@ class UserUpdate(BaseModel):
 
 # ── API key management ────────────────────────────────────────────────────────
 
+
 class ApiKeysUpdate(BaseModel):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
@@ -62,6 +63,7 @@ class ApiKeysTestResponse(BaseModel):
 
 # ── Backward-compat aliases (used by users.py) ───────────────────────────────
 
+
 class UserUpdateLLMKeys(BaseModel):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
@@ -69,6 +71,7 @@ class UserUpdateLLMKeys(BaseModel):
 
 
 # ── Response schemas ─────────────────────────────────────────────────────────
+
 
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -104,8 +107,17 @@ class UserRead(BaseModel):
 
 
 class AuthResponse(BaseModel):
-    """Returned by /register and /login."""
+    """Returned by /login endpoint."""
+
     user: UserRead
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class RegisterResponse(UserRead):
+    """Returned by /register endpoint — flattens user fields with tokens."""
+
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
@@ -113,7 +125,9 @@ class AuthResponse(BaseModel):
 
 class RefreshResponse(BaseModel):
     """Returned by /refresh."""
+
     access_token: str
+    refresh_token: str | None = None
     token_type: str = "bearer"
 
 
@@ -122,6 +136,7 @@ class MessageResponse(BaseModel):
 
 
 # ── Legacy schemas (backward compat with existing tests) ─────────────────────
+
 
 class Token(BaseModel):
     access_token: str

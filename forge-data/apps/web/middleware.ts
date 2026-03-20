@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/register", "/api/health"];
+const PUBLIC_PATHS = ["/login", "/register", "/api/"];
 const AUTH_PATHS = ["/login", "/register"];
 
 export function middleware(req: NextRequest) {
@@ -31,7 +31,15 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  return NextResponse.next();
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-forwarded-host", req.headers.get("host") || "");
+  requestHeaders.set("x-forwarded-proto", req.nextUrl.protocol.replace(":", ""));
+
+  return NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
 }
 
 export const config = {

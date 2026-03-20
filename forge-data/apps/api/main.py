@@ -1,9 +1,10 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import auth, connectors, health, workbooks, llm
+from routers import auth, connectors, health, llm, workbooks
 
 
 @asynccontextmanager
@@ -23,8 +24,6 @@ app = FastAPI(
 )
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
-import os
-
 cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost").split(",")
 
 app.add_middleware(

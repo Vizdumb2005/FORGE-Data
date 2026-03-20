@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://api:8000";
+const API_URL = process.env.API_URL ?? "http://api:8000";
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -24,10 +24,19 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  webpack(config) {
+  webpack(config, { dev }) {
     // Suppress "Critical dependency" warnings from monaco-editor
     config.module = config.module ?? {};
     config.module.exprContextCritical = false;
+
+    // Speed up HMR by excluding heavy packages from file watching
+    if (dev) {
+      config.watchOptions = {
+        ...config.watchOptions,
+        ignored: ["**/node_modules/**", "**/.git/**"],
+      };
+    }
+
     return config;
   },
 };

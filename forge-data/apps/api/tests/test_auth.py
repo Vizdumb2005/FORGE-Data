@@ -3,31 +3,31 @@
 import pytest
 from httpx import AsyncClient
 
+pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-@pytest.mark.asyncio
+
 async def test_register_success(client: AsyncClient) -> None:
     """Registering with valid data should return 201 and a user object."""
     resp = await client.post(
         "/api/v1/auth/register",
         json={
-            "email": "newuser@forge-data.test",
+            "email": "newuser@example.com",
             "password": "SecurePass1",
             "full_name": "New User",
         },
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["email"] == "newuser@forge-data.test"
+    assert body["email"] == "newuser@example.com"
     assert body["full_name"] == "New User"
     assert "id" in body
     assert "hashed_password" not in body
 
 
-@pytest.mark.asyncio
 async def test_register_duplicate_email(client: AsyncClient) -> None:
     """Registering with an existing email should return 409."""
     payload = {
-        "email": "duplicate@forge-data.test",
+        "email": "duplicate@example.com",
         "password": "SecurePass1",
         "full_name": "Dup User",
     }
@@ -39,13 +39,12 @@ async def test_register_duplicate_email(client: AsyncClient) -> None:
     assert resp2.json()["code"] == "EMAIL_EXISTS"
 
 
-@pytest.mark.asyncio
 async def test_register_weak_password(client: AsyncClient) -> None:
     """Password without uppercase letter or digit should return 422."""
     resp = await client.post(
         "/api/v1/auth/register",
         json={
-            "email": "weak@forge-data.test",
+            "email": "weak@example.com",
             "password": "onlylower",
             "full_name": "Weak User",
         },
@@ -53,13 +52,12 @@ async def test_register_weak_password(client: AsyncClient) -> None:
     assert resp.status_code == 422
 
 
-@pytest.mark.asyncio
 async def test_login_success(client: AsyncClient, registered_user: dict) -> None:
     """Valid credentials should return access + refresh tokens."""
     resp = await client.post(
         "/api/v1/auth/token",
         data={
-            "username": "testuser@forge-data.test",
+            "username": "testuser@example.com",
             "password": "SecurePass1",
         },
     )
@@ -70,56 +68,51 @@ async def test_login_success(client: AsyncClient, registered_user: dict) -> None
     assert body["token_type"] == "bearer"
 
 
-@pytest.mark.asyncio
 async def test_login_wrong_password(client: AsyncClient, registered_user: dict) -> None:
     """Wrong password should return 401."""
     resp = await client.post(
         "/api/v1/auth/token",
         data={
-            "username": "testuser@forge-data.test",
+            "username": "testuser@example.com",
             "password": "WrongPass9",
         },
     )
     assert resp.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_login_unknown_email(client: AsyncClient) -> None:
     """Unknown email should return 401 (not 404 — to prevent user enumeration)."""
     resp = await client.post(
         "/api/v1/auth/token",
         data={
-            "username": "nobody@forge-data.test",
+            "username": "nobody@example.com",
             "password": "Anything1",
         },
     )
     assert resp.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_get_me(client: AsyncClient, auth_headers: dict) -> None:
     """Authenticated GET /api/v1/users/me should return the current user."""
     resp = await client.get("/api/v1/users/me", headers=auth_headers)
     assert resp.status_code == 200
     body = resp.json()
-    assert body["email"] == "testuser@forge-data.test"
+    assert body["email"] == "testuser@example.com"
 
 
-@pytest.mark.asyncio
 async def test_get_me_unauthenticated(client: AsyncClient) -> None:
     """GET /api/v1/users/me without a token should return 401."""
     resp = await client.get("/api/v1/users/me")
     assert resp.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_token_refresh(client: AsyncClient, registered_user: dict) -> None:
     """A valid refresh token should return a new token pair."""
     # Log in to get tokens
     login = await client.post(
         "/api/v1/auth/token",
         data={
-            "username": "testuser@forge-data.test",
+            "username": "testuser@example.com",
             "password": "SecurePass1",
         },
     )
@@ -136,12 +129,13 @@ async def test_token_refresh(client: AsyncClient, registered_user: dict) -> None
     assert "refresh_token" in body
 
 
-@pytest.mark.asyncio
 async def test_token_refresh_with_access_token_rejected(
     client: AsyncClient, auth_headers: dict
 ) -> None:
     """Using an access token as a refresh token should be rejected."""
     access_token = auth_headers["Authorization"].removeprefix("Bearer ")
+    # Clear cookies set by prior refresh test so the endpoint reads the body
+    client.cookies.clear()
     resp = await client.post(
         "/api/v1/auth/refresh",
         json={"refresh_token": access_token},

@@ -12,6 +12,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 if TYPE_CHECKING:
+    from app.models.data_quality import DataQualityReport, DataQualityRuleset
+    from app.models.dataset_version import DatasetVersion
     from app.models.user import User
     from app.models.workspace import Workspace
 
@@ -71,6 +73,9 @@ class Dataset(Base):
     # Storage path in MinIO (for file-backed datasets)
     storage_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
+    # Profiling data (populated after ingestion / DuckDB registration)
+    profile_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     # Versioning — incremented on each re-import
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
@@ -87,6 +92,22 @@ class Dataset(Base):
     # ── Relationships ──────────────────────────────────────────────────────
     workspace: Mapped["Workspace"] = relationship("Workspace", back_populates="datasets")
     creator: Mapped["User"] = relationship("User")
+    versions: Mapped[list["DatasetVersion"]] = relationship(
+        "DatasetVersion",
+        back_populates="dataset",
+        cascade="all, delete-orphan",
+        order_by="DatasetVersion.version_number",
+    )
+    quality_rulesets: Mapped[list["DataQualityRuleset"]] = relationship(
+        "DataQualityRuleset",
+        back_populates="dataset",
+        cascade="all, delete-orphan",
+    )
+    quality_reports: Mapped[list["DataQualityReport"]] = relationship(
+        "DataQualityReport",
+        back_populates="dataset",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<Dataset id={self.id!r} name={self.name!r} type={self.source_type!r}>"

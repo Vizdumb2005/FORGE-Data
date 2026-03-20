@@ -1,0 +1,14 @@
+c = get_config()  # noqa: F821 — injected by Jupyter
+c.KernelGatewayApp.ip = "0.0.0.0"
+c.KernelGatewayApp.port = 8888
+c.KernelGatewayApp.api = "kernel_gateway.jupyter_websocket"
+c.KernelGatewayApp.allow_origin = "*"
+c.KernelGatewayApp.auth_token = ""
+c.JupyterWebsocketPersonality.list_kernels = True
+c.GatewayIdentityProvider.token = ""
+c.IdentityProvider.token = ""
+c.ServerApp.token = ""
+c.ServerApp.password = ""
+c.ServerApp.disable_check_xsrf = True
+c.ServerApp.allow_unauthenticated_access = True
+c.JupyterApp.answer_yes = True

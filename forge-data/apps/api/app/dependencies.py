@@ -3,13 +3,13 @@
 import logging
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import database as _db_module
 from app.config import Settings, get_settings
 from app.core.security import verify_token
-from app.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +19,10 @@ oauth2_scheme_required = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
 # ── Database dependency ────────────────────────────────────────────────────────
 
+
 async def get_db() -> AsyncSession:  # type: ignore[return]
     """Yield an async SQLAlchemy session, committing on success or rolling back on error."""
-    async with AsyncSessionLocal() as session:
+    async with _db_module.AsyncSessionLocal() as session:
         try:
             yield session
             await session.commit()
@@ -32,11 +33,13 @@ async def get_db() -> AsyncSession:  # type: ignore[return]
 
 # ── Settings dependency ────────────────────────────────────────────────────────
 
+
 def get_app_settings() -> Settings:
     return get_settings()
 
 
 # ── Auth dependencies ─────────────────────────────────────────────────────────
+
 
 async def get_current_user(
     token: Annotated[str | None, Depends(oauth2_scheme_required)],
@@ -115,6 +118,7 @@ async def get_optional_user(
 
 # ── RBAC dependency factory ──────────────────────────────────────────────────
 
+
 def require_workspace_role(*roles: str):
     """Return a FastAPI dependency that checks workspace membership and role.
 
@@ -134,6 +138,7 @@ def require_workspace_role(*roles: str):
     - Returns the :class:`Workspace` ORM object on success.
     - Raises 404 if workspace not found, 403 if insufficient role.
     """
+
     async def _check(
         workspace_id: str,
         current_user=Depends(get_current_active_user),
@@ -146,9 +151,27 @@ def require_workspace_role(*roles: str):
     return _check
 
 
+# ── Query engine dependency ───────────────────────────────────────────────────
+
+
+async def get_query_engine(request: Request):
+    """Return the FederatedQueryEngine singleton from app state."""
+    return request.app.state.query_engine
+
+
+# ── Kernel manager dependency ────────────────────────────────────────────────
+
+
+async def get_kernel_manager(request: Request):
+    """Return the KernelManager singleton from app state."""
+    return request.app.state.kernel_manager
+
+
 # ── Convenience type aliases (for endpoint signatures) ─────────────────────────
 
 DBSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[object, Depends(get_current_active_user)]
 OptionalUser = Annotated[object | None, Depends(get_optional_user)]
 AppSettings = Annotated[Settings, Depends(get_app_settings)]
+QueryEngine = Annotated[object, Depends(get_query_engine)]
+KernelMgr = Annotated[object, Depends(get_kernel_manager)]

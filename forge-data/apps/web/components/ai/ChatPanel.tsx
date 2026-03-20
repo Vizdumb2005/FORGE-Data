@@ -10,7 +10,7 @@ interface ChatPanelProps {
   workspaceId: string;
 }
 
-const BASE_URL = typeof window !== "undefined" ? "" : process.env.NEXT_PUBLIC_API_URL ?? "";
+const BASE_URL = "";
 
 export default function ChatPanel({ workspaceId }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -109,6 +109,7 @@ export default function ChatPanel({ workspaceId }: ChatPanelProps) {
           value={provider}
           onChange={(e) => setProvider(e.target.value as LLMProvider)}
           className="rounded border border-forge-border bg-forge-bg px-2 py-0.5 text-xs text-forge-muted focus:outline-none"
+          aria-label="Select AI provider"
         >
           <option value="openai">OpenAI</option>
           <option value="anthropic">Anthropic</option>
@@ -178,6 +179,7 @@ export default function ChatPanel({ workspaceId }: ChatPanelProps) {
             onClick={send}
             disabled={!input.trim() || streaming}
             className="rounded-md bg-forge-accent p-2 text-forge-bg hover:bg-forge-accent-dim disabled:opacity-50"
+            aria-label="Send message"
           >
             <Send className="h-4 w-4" />
           </button>

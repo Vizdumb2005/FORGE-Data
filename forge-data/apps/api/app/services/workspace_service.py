@@ -1,7 +1,7 @@
 """Workspace service — CRUD, member management, RBAC helpers."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,9 +51,8 @@ _NOT_DELETED = Workspace.deleted_at.is_(None)
 
 # ── Read helpers ─────────────────────────────────────────────────────────────
 
-async def _get_member_role(
-    db: AsyncSession, workspace_id: str, user_id: str
-) -> MemberRole | None:
+
+async def _get_member_role(db: AsyncSession, workspace_id: str, user_id: str) -> MemberRole | None:
     result = await db.execute(
         select(WorkspaceMember).where(
             WorkspaceMember.workspace_id == workspace_id,
@@ -66,9 +65,7 @@ async def _get_member_role(
     return None
 
 
-async def _resolve_role(
-    workspace: Workspace, user_id: str, db: AsyncSession
-) -> str | None:
+async def _resolve_role(workspace: Workspace, user_id: str, db: AsyncSession) -> str | None:
     """Return the effective role string for user_id in workspace."""
     if workspace.owner_id == user_id:
         return "admin"
@@ -78,36 +75,42 @@ async def _resolve_role(
 
 async def _count_members(db: AsyncSession, workspace_id: str) -> int:
     result = await db.execute(
-        select(func.count()).select_from(WorkspaceMember).where(
-            WorkspaceMember.workspace_id == workspace_id
-        )
+        select(func.count())
+        .select_from(WorkspaceMember)
+        .where(WorkspaceMember.workspace_id == workspace_id)
     )
     return result.scalar_one()
 
 
 async def _count_datasets(db: AsyncSession, workspace_id: str) -> int:
     result = await db.execute(
-        select(func.count()).select_from(Dataset).where(
-            Dataset.workspace_id == workspace_id
-        )
+        select(func.count()).select_from(Dataset).where(Dataset.workspace_id == workspace_id)
     )
     return result.scalar_one()
 
 
 # ── Workspace CRUD ───────────────────────────────────────────────────────────
 
+
 async def get_workspace_or_404(
     db: AsyncSession,
     workspace_id: str,
 ) -> Workspace:
     """Return workspace by ID or raise 404. Does NOT check membership."""
-    result = await db.execute(
-        select(Workspace).where(Workspace.id == workspace_id, _NOT_DELETED)
-    )
+    result = await db.execute(select(Workspace).where(Workspace.id == workspace_id, _NOT_DELETED))
     workspace = result.scalar_one_or_none()
     if workspace is None:
         raise NotFoundException("Workspace", workspace_id)
     return workspace
+
+
+async def get_workspace(
+    db: AsyncSession,
+    workspace_id: str,
+    user_id: str,
+) -> Workspace:
+    """Alias for get_workspace_for_user (used by connectors, execute, datasets routers)."""
+    return await get_workspace_for_user(db, workspace_id, user_id)
 
 
 async def get_workspace_for_user(
@@ -130,9 +133,7 @@ async def get_workspace_for_user(
     return workspace
 
 
-async def list_workspaces(
-    db: AsyncSession, user_id: str
-) -> list[WorkspaceRead]:
+async def list_workspaces(db: AsyncSession, user_id: str) -> list[WorkspaceRead]:
     """Return all non-deleted workspaces accessible to *user_id* with counts and role."""
     # Owned workspaces
     owned_result = await db.execute(
@@ -142,18 +143,14 @@ async def list_workspaces(
 
     # Membership workspaces
     member_ws_ids_result = await db.execute(
-        select(WorkspaceMember.workspace_id).where(
-            WorkspaceMember.user_id == user_id
-        )
+        select(WorkspaceMember.workspace_id).where(WorkspaceMember.user_id == user_id)
     )
     member_ws_ids = [r[0] for r in member_ws_ids_result.all()]
 
     member_workspaces: list[Workspace] = []
     if member_ws_ids:
         result = await db.execute(
-            select(Workspace).where(
-                Workspace.id.in_(member_ws_ids), _NOT_DELETED
-            )
+            select(Workspace).where(Workspace.id.in_(member_ws_ids), _NOT_DELETED)
         )
         member_workspaces = list(result.scalars().all())
 
@@ -172,18 +169,20 @@ async def list_workspaces(
         member_count = await _count_members(db, ws.id)
         dataset_count = await _count_datasets(db, ws.id)
         # Owner counts as a member for display (+1)
-        results.append(WorkspaceRead(
-            id=ws.id,
-            name=ws.name,
-            description=ws.description,
-            is_public=ws.is_public,
-            owner_id=ws.owner_id,
-            created_at=ws.created_at,
-            updated_at=ws.updated_at,
-            member_count=member_count + 1,  # +1 for owner
-            dataset_count=dataset_count,
-            role=role,
-        ))
+        results.append(
+            WorkspaceRead(
+                id=ws.id,
+                name=ws.name,
+                description=ws.description,
+                is_public=ws.is_public,
+                owner_id=ws.owner_id,
+                created_at=ws.created_at,
+                updated_at=ws.updated_at,
+                member_count=member_count + 1,  # +1 for owner
+                dataset_count=dataset_count,
+                role=role,
+            )
+        )
     return results
 
 
@@ -234,9 +233,7 @@ async def get_workspace_detail(
     )
 
 
-async def create_workspace(
-    db: AsyncSession, payload: WorkspaceCreate, owner_id: str
-) -> Workspace:
+async def create_workspace(db: AsyncSession, payload: WorkspaceCreate, owner_id: str) -> Workspace:
     """Create a workspace and add the creator as an admin member."""
     workspace = Workspace(
         name=payload.name,
@@ -273,6 +270,7 @@ async def update_workspace(
         workspace.is_public = payload.is_public
 
     await db.flush()
+    await db.refresh(workspace)
     return workspace
 
 
@@ -281,11 +279,12 @@ async def soft_delete_workspace(
     workspace: Workspace,
 ) -> None:
     """Soft-delete a workspace by setting deleted_at (caller already verified RBAC)."""
-    workspace.deleted_at = datetime.now(timezone.utc)
+    workspace.deleted_at = datetime.now(UTC)
     await db.flush()
 
 
 # ── Member management ────────────────────────────────────────────────────────
+
 
 async def add_member_by_email(
     db: AsyncSession,
@@ -294,9 +293,7 @@ async def add_member_by_email(
 ) -> WorkspaceMember:
     """Look up user by email and add to workspace. Caller already verified admin RBAC."""
     # Resolve user by email
-    user_result = await db.execute(
-        select(User).where(User.email == payload.email.lower())
-    )
+    user_result = await db.execute(select(User).where(User.email == payload.email.lower()))
     user: User | None = user_result.scalar_one_or_none()
     if user is None:
         raise NotFoundException("User", str(payload.email))
@@ -351,7 +348,9 @@ async def update_member_role(
     # Guard: cannot downgrade the only admin
     if member.role == MemberRole.admin.value and payload.role != MemberRole.admin:
         admin_count_result = await db.execute(
-            select(func.count()).select_from(WorkspaceMember).where(
+            select(func.count())
+            .select_from(WorkspaceMember)
+            .where(
                 WorkspaceMember.workspace_id == workspace_id,
                 WorkspaceMember.role == MemberRole.admin.value,
             )
@@ -382,9 +381,7 @@ async def remove_member(
         if workspace.owner_id != current_user_id:
             role = await _get_member_role(db, workspace_id, current_user_id)
             if role is None or not _role_gte(role.value, MemberRole.admin):
-                raise ForbiddenException(
-                    "Only admins can remove other members"
-                )
+                raise ForbiddenException("Only admins can remove other members")
 
     result = await db.execute(
         select(WorkspaceMember).where(
@@ -399,21 +396,22 @@ async def remove_member(
     # Guard: cannot remove the only admin (even self)
     if member.role == MemberRole.admin.value:
         admin_count_result = await db.execute(
-            select(func.count()).select_from(WorkspaceMember).where(
+            select(func.count())
+            .select_from(WorkspaceMember)
+            .where(
                 WorkspaceMember.workspace_id == workspace_id,
                 WorkspaceMember.role == MemberRole.admin.value,
             )
         )
         if admin_count_result.scalar_one() <= 1:
-            raise ForbiddenException(
-                "Cannot remove the only admin. Promote another member first."
-            )
+            raise ForbiddenException("Cannot remove the only admin. Promote another member first.")
 
     await db.delete(member)
     await db.flush()
 
 
 # ── RBAC check (used by the require_workspace_role dependency) ───────────────
+
 
 async def check_workspace_role(
     db: AsyncSession,

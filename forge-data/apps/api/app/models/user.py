@@ -35,9 +35,7 @@ class User(Base):
     )
 
     # ── Identity ───────────────────────────────────────────────────────────
-    email: Mapped[str] = mapped_column(
-        String(255), unique=True, nullable=False, index=True
-    )
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
 
@@ -58,15 +56,9 @@ class User(Base):
 
     # ── BYOK — encrypted LLM API keys ──────────────────────────────────────
     # Values are encrypted at the application layer using Fernet before storage.
-    openai_api_key: Mapped[str | None] = mapped_column(
-        String(2048), nullable=True
-    )
-    anthropic_api_key: Mapped[str | None] = mapped_column(
-        String(2048), nullable=True
-    )
-    ollama_base_url: Mapped[str | None] = mapped_column(
-        String(512), nullable=True
-    )
+    openai_api_key: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    anthropic_api_key: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    ollama_base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     preferred_llm_provider: Mapped[str] = mapped_column(
         String(64), default=LLMProvider.openai.value, nullable=False
@@ -79,9 +71,7 @@ class User(Base):
     workspace_memberships: Mapped[list["WorkspaceMember"]] = relationship(
         "WorkspaceMember", back_populates="user", cascade="all, delete-orphan"
     )
-    audit_logs: Mapped[list["AuditLog"]] = relationship(
-        "AuditLog", back_populates="user"
-    )
+    audit_logs: Mapped[list["AuditLog"]] = relationship("AuditLog", back_populates="user")
 
     def __repr__(self) -> str:
         return f"<User id={self.id!r} email={self.email!r}>"

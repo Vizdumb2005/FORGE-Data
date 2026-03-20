@@ -59,14 +59,28 @@ export const useAuthStore = create<AuthState & AuthActions>()(
           s.error = null;
         });
         try {
-          const resp = await api.post<AuthResponse>(
+          const resp = await api.post<any>(
             "/api/v1/auth/register",
             payload
           );
           // Auto-login after successful registration
+          // RegisterResponse flattens all user fields + tokens at top level
           setTokens(resp.data.access_token, resp.data.refresh_token);
           set((s) => {
-            s.user = resp.data.user;
+            // Extract user fields from flattened response
+            s.user = {
+              id: resp.data.id,
+              email: resp.data.email,
+              full_name: resp.data.full_name,
+              is_active: resp.data.is_active,
+              is_verified: resp.data.is_verified,
+              preferred_llm_provider: resp.data.preferred_llm_provider,
+              has_openai_key: resp.data.has_openai_key,
+              has_anthropic_key: resp.data.has_anthropic_key,
+              has_ollama_url: resp.data.has_ollama_url,
+              created_at: resp.data.created_at,
+              updated_at: resp.data.updated_at,
+            };
             s.loading = false;
           });
         } catch (err: unknown) {

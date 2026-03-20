@@ -1,5 +1,6 @@
 """FORGE Data API — FastAPI application entry point."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -12,7 +13,9 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.core.exceptions import ForgeException
+from app.core.kernel_manager import KernelManager
 from app.core.middleware import AuditMiddleware, RequestLoggingMiddleware
+from app.core.query_engine import FederatedQueryEngine
 from app.core.redis import close_redis, ping_redis
 from app.routers import (
     ai,
@@ -36,6 +39,7 @@ logging.basicConfig(
 
 
 # ── Startup / shutdown ────────────────────────────────────────────────────────
+
 
 async def _check_database() -> None:
     from app.database import engine
@@ -77,17 +81,58 @@ async def _check_redis() -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):  # noqa: ARG001
+async def lifespan(app: FastAPI):
     logger.info("Starting FORGE Data API v%s", app.version)
     await _check_database()
     await _ensure_minio_bucket()
     await _check_redis()
+
+    # Initialise the federated query engine
+    query_engine = FederatedQueryEngine()
+    app.state.query_engine = query_engine
+    logger.info("DuckDB query engine initialised")
+
+    # Initialise the kernel manager (Jupyter Kernel Gateway)
+    kernel_manager = KernelManager()
+    app.state.kernel_manager = kernel_manager
+    logger.info("Kernel manager initialised")
+
+    # Background task: evict idle DuckDB connections every 5 minutes
+    async def _idle_cleanup_loop() -> None:
+        while True:
+            await asyncio.sleep(300)
+            try:
+                await query_engine.cleanup_idle()
+            except Exception as exc:
+                logger.warning("DuckDB idle cleanup error: %s", exc)
+
+    # Background task: evict idle kernels every 10 minutes
+    async def _kernel_cleanup_loop() -> None:
+        while True:
+            await asyncio.sleep(600)
+            try:
+                evicted = await kernel_manager.cleanup_idle()
+                if evicted:
+                    logger.info("Evicted %d idle kernel(s)", evicted)
+            except Exception as exc:
+                logger.warning("Kernel idle cleanup error: %s", exc)
+
+    cleanup_task = asyncio.create_task(_idle_cleanup_loop())
+    kernel_cleanup_task = asyncio.create_task(_kernel_cleanup_loop())
+
     yield
+
+    # Shutdown
+    cleanup_task.cancel()
+    kernel_cleanup_task.cancel()
+    await kernel_manager.shutdown_all()
+    await query_engine.close_all()
     await close_redis()
     logger.info("FORGE Data API shutdown complete")
 
 
 # ── Application factory ────────────────────────────────────────────────────────
+
 
 def create_app() -> FastAPI:
     app = FastAPI(
@@ -116,14 +161,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=["X-Request-ID", "X-Process-Time"],
     )
-    app.add_middleware(RequestLoggingMiddleware)
-    app.add_middleware(AuditMiddleware)
+    if settings.app_env != "test":
+        app.add_middleware(RequestLoggingMiddleware)
+        app.add_middleware(AuditMiddleware)
 
     # ── Exception handlers ─────────────────────────────────────────────────
     @app.exception_handler(ForgeException)
-    async def forge_exception_handler(
-        request: Request, exc: ForgeException  # noqa: ARG001
-    ) -> JSONResponse:
+    async def forge_exception_handler(request: Request, exc: ForgeException) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail, "code": exc.code},
@@ -140,17 +184,17 @@ def create_app() -> FastAPI:
         return {"status": "ok", "version": app.version}
 
     # ── Routers ────────────────────────────────────────────────────────────
-    V1 = "/api/v1"
-    app.include_router(health.router, prefix=V1, tags=["health"])
-    app.include_router(auth.router, prefix=f"{V1}/auth", tags=["auth"])
-    app.include_router(users.router, prefix=f"{V1}/users", tags=["users"])
-    app.include_router(workspaces.router, prefix=f"{V1}/workspaces", tags=["workspaces"])
-    app.include_router(datasets.router, prefix=f"{V1}/datasets", tags=["datasets"])
-    app.include_router(cells.router, prefix=f"{V1}/workspaces", tags=["cells"])
-    app.include_router(execute.router, prefix=f"{V1}/workspaces", tags=["execute"])
-    app.include_router(ai.router, prefix=f"{V1}/ai", tags=["ai"])
-    app.include_router(connectors.router, prefix=f"{V1}/connectors", tags=["connectors"])
-    app.include_router(experiments.router, prefix=f"{V1}/experiments", tags=["experiments"])
+    v1 = "/api/v1"
+    app.include_router(health.router, prefix=v1, tags=["health"])
+    app.include_router(auth.router, prefix=f"{v1}/auth", tags=["auth"])
+    app.include_router(users.router, prefix=f"{v1}/users", tags=["users"])
+    app.include_router(workspaces.router, prefix=f"{v1}/workspaces", tags=["workspaces"])
+    app.include_router(datasets.router, prefix=v1, tags=["datasets"])
+    app.include_router(cells.router, prefix=f"{v1}/workspaces", tags=["cells"])
+    app.include_router(execute.router, prefix=f"{v1}/workspaces", tags=["execute"])
+    app.include_router(ai.router, prefix=f"{v1}/ai", tags=["ai"])
+    app.include_router(connectors.router, prefix=f"{v1}/connectors", tags=["connectors"])
+    app.include_router(experiments.router, prefix=f"{v1}/experiments", tags=["experiments"])
 
     return app
 

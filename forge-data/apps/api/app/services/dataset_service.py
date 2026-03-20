@@ -13,9 +13,7 @@ from app.models.dataset import Dataset, SourceType
 from app.schemas.dataset import DatasetCreate, DatasetPreview, DatasetUpdate
 
 
-async def list_datasets(
-    db: AsyncSession, workspace_id: str
-) -> list[Dataset]:
+async def list_datasets(db: AsyncSession, workspace_id: str) -> list[Dataset]:
     result = await db.execute(
         select(Dataset)
         .where(Dataset.workspace_id == workspace_id)
@@ -24,9 +22,7 @@ async def list_datasets(
     return list(result.scalars().all())
 
 
-async def get_dataset(
-    db: AsyncSession, workspace_id: str, dataset_id: str
-) -> Dataset:
+async def get_dataset(db: AsyncSession, workspace_id: str, dataset_id: str) -> Dataset:
     result = await db.execute(
         select(Dataset).where(
             Dataset.id == dataset_id,
@@ -49,6 +45,7 @@ async def create_dataset(
     encrypted_config: dict | None = None
     if payload.connection_config:
         import json
+
         raw = json.dumps(payload.connection_config)
         encrypted_config = {"__encrypted__": encrypt_field(raw)}
 
@@ -62,6 +59,7 @@ async def create_dataset(
     )
     db.add(dataset)
     await db.flush()
+    await db.refresh(dataset)
     return dataset
 
 
@@ -79,6 +77,7 @@ async def update_dataset(
         dataset.description = payload.description
     if payload.connection_config is not None:
         import json
+
         raw = json.dumps(payload.connection_config)
         dataset.connection_config = {"__encrypted__": encrypt_field(raw)}
         dataset.version = (dataset.version or 1) + 1
@@ -87,9 +86,7 @@ async def update_dataset(
     return dataset
 
 
-async def delete_dataset(
-    db: AsyncSession, workspace_id: str, dataset_id: str
-) -> None:
+async def delete_dataset(db: AsyncSession, workspace_id: str, dataset_id: str) -> None:
     dataset = await get_dataset(db, workspace_id, dataset_id)
     await db.delete(dataset)
     await db.flush()
@@ -147,6 +144,7 @@ async def ingest_file(
     dataset.source_type = SourceType.parquet.value  # store as parquet after ingestion
 
     await db.flush()
+    await db.refresh(dataset)
     return dataset
 
 
@@ -165,7 +163,7 @@ async def get_preview(
         raise NotFoundException("Dataset file", dataset_id)
 
     data = await _download_from_minio(dataset.storage_path)
-    if dataset.source_path_is_parquet(dataset):
+    if dataset.storage_path.endswith(".parquet"):
         df = pd.read_parquet(io.BytesIO(data))
     else:
         df = pd.read_csv(io.BytesIO(data))
@@ -180,21 +178,34 @@ async def get_preview(
     )
 
 
+async def update_profile(
+    db: AsyncSession, workspace_id: str, dataset_id: str, profile_data: dict
+) -> Dataset:
+    """Store profiling results on the Dataset record."""
+    dataset = await get_dataset(db, workspace_id, dataset_id)
+    dataset.profile_data = profile_data
+    dataset.row_count = profile_data.get("row_count", dataset.row_count)
+    dataset.column_count = profile_data.get("column_count", dataset.column_count)
+    await db.flush()
+    await db.refresh(dataset)
+    return dataset
+
+
 def get_decrypted_connection_config(dataset: Dataset) -> dict[str, Any] | None:
     """Return the plaintext connection config dict, or None if not set."""
     if not dataset.connection_config:
         return None
     if "__encrypted__" in dataset.connection_config:
         import json
+
         return json.loads(decrypt_field(dataset.connection_config["__encrypted__"]))
     return dataset.connection_config  # legacy unencrypted
 
 
 # ── Private helpers ────────────────────────────────────────────────────────────
 
-async def _upload_to_minio(
-    workspace_id: str, dataset_id: str, data: bytes, filename: str
-) -> str:
+
+async def _upload_to_minio(workspace_id: str, dataset_id: str, data: bytes, filename: str) -> str:
     """Upload *data* to MinIO and return the object path."""
     try:
         from minio import Minio

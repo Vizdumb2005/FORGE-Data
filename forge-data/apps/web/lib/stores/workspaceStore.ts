@@ -7,31 +7,66 @@ import type {
   WorkspaceUpdatePayload,
   Cell,
   CellCreatePayload,
+  CellUpdatePayload,
+  CellOutput,
 } from "@/types";
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+export type KernelStatus = "idle" | "busy" | "starting" | "dead" | "unknown";
+export type CellRunStatus = "idle" | "running" | "success" | "error";
+
+export interface CellState {
+  cell: Cell;
+  runStatus: CellRunStatus;
+  outputs: CellOutput[];
+  localContent: string;
+  dirty: boolean;
+}
 
 interface WorkspaceState {
   workspaces: Workspace[];
   activeWorkspace: Workspace | null;
-  cells: Cell[];
+  cellStates: Record<string, CellState>;
+  cellOrder: string[];
+  kernelStatus: KernelStatus;
+  activeCellId: string | null;
+  isRunningAll: boolean;
+  zoom: number;
   loading: boolean;
   error: string | null;
 }
 
 interface WorkspaceActions {
+  // Workspace CRUD
   fetchWorkspaces: () => Promise<void>;
   createWorkspace: (payload: WorkspaceCreatePayload) => Promise<Workspace>;
   updateWorkspace: (id: string, payload: WorkspaceUpdatePayload) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   setActiveWorkspace: (ws: Workspace | null) => void;
+
+  // Cell CRUD
   fetchCells: (workspaceId: string) => Promise<void>;
   createCell: (workspaceId: string, payload: CellCreatePayload) => Promise<Cell>;
-  updateCellPosition: (
-    cellId: string,
-    workspaceId: string,
-    x: number,
-    y: number
-  ) => Promise<void>;
+  updateCell: (workspaceId: string, cellId: string, payload: CellUpdatePayload) => void;
+  updateCellSync: (workspaceId: string, cellId: string, payload: CellUpdatePayload) => Promise<void>;
+  updateCellContent: (cellId: string, content: string) => void;
   deleteCell: (cellId: string, workspaceId: string) => Promise<void>;
+  updateCellPosition: (cellId: string, workspaceId: string, x: number, y: number) => Promise<void>;
+  reorderCells: (orderedIds: string[]) => void;
+
+  // Execution
+  setActiveCellId: (id: string | null) => void;
+  setCellRunStatus: (cellId: string, status: CellRunStatus) => void;
+  appendCellOutput: (cellId: string, output: CellOutput) => void;
+  setCellOutputs: (cellId: string, outputs: CellOutput[]) => void;
+  clearCellOutputs: (cellId: string) => void;
+  setKernelStatus: (status: KernelStatus) => void;
+  setIsRunningAll: (running: boolean) => void;
+
+  // Zoom
+  setZoom: (zoom: number) => void;
+
   clearError: () => void;
 }
 
@@ -39,40 +74,35 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
   immer((set) => ({
     workspaces: [],
     activeWorkspace: null,
-    cells: [],
+    cellStates: {},
+    cellOrder: [],
+    kernelStatus: "unknown",
+    activeCellId: null,
+    isRunningAll: false,
+    zoom: 1,
     loading: false,
     error: null,
 
+    // ── Workspace CRUD ──────────────────────────────────────────────────
+
     fetchWorkspaces: async () => {
-      set((s) => {
-        s.loading = true;
-      });
+      set((s) => { s.loading = true; });
       try {
-        const resp = await api.get<Workspace[]>("/api/v1/workspaces");
-        set((s) => {
-          s.workspaces = resp.data;
-          s.loading = false;
-        });
+        const resp = await api.get<Workspace[]>("/api/v1/workspaces/");
+        set((s) => { s.workspaces = resp.data; s.loading = false; });
       } catch {
-        set((s) => {
-          s.loading = false;
-        });
+        set((s) => { s.loading = false; });
       }
     },
 
     createWorkspace: async (payload) => {
-      const resp = await api.post<Workspace>("/api/v1/workspaces", payload);
-      set((s) => {
-        s.workspaces.unshift(resp.data);
-      });
+      const resp = await api.post<Workspace>("/api/v1/workspaces/", payload);
+      set((s) => { s.workspaces.unshift(resp.data); });
       return resp.data;
     },
 
     updateWorkspace: async (id, payload) => {
-      const resp = await api.patch<Workspace>(
-        `/api/v1/workspaces/${id}`,
-        payload
-      );
+      const resp = await api.patch<Workspace>(`/api/v1/workspaces/${id}`, payload);
       set((s) => {
         const idx = s.workspaces.findIndex((w) => w.id === id);
         if (idx !== -1) s.workspaces[idx] = resp.data;
@@ -88,29 +118,101 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
       });
     },
 
-    setActiveWorkspace: (ws) =>
-      set((s) => {
-        s.activeWorkspace = ws;
-      }),
+    setActiveWorkspace: (ws) => set((s) => { s.activeWorkspace = ws; }),
+
+    // ── Cell CRUD ───────────────────────────────────────────────────────
 
     fetchCells: async (workspaceId) => {
-      const resp = await api.get<Cell[]>(
-        `/api/v1/workspaces/${workspaceId}/cells`
-      );
+      const resp = await api.get<Cell[]>(`/api/v1/workspaces/${workspaceId}/cells`);
       set((s) => {
-        s.cells = resp.data;
+        const newStates: Record<string, CellState> = {};
+        const order: string[] = [];
+        for (const cell of resp.data) {
+          order.push(cell.id);
+          newStates[cell.id] = {
+            cell,
+            runStatus: "idle",
+            outputs: cell.output ? [cell.output] : [],
+            localContent: cell.content,
+            dirty: false,
+          };
+        }
+        // Sort by position_y then position_x
+        order.sort((a, b) => {
+          const ca = newStates[a].cell;
+          const cb = newStates[b].cell;
+          return ca.position_y - cb.position_y || ca.position_x - cb.position_x;
+        });
+        s.cellStates = newStates;
+        s.cellOrder = order;
       });
     },
 
     createCell: async (workspaceId, payload) => {
-      const resp = await api.post<Cell>(
-        `/api/v1/workspaces/${workspaceId}/cells`,
-        payload
-      );
+      const resp = await api.post<Cell>(`/api/v1/workspaces/${workspaceId}/cells`, payload);
+      const cell = resp.data;
       set((s) => {
-        s.cells.push(resp.data);
+        s.cellStates[cell.id] = {
+          cell,
+          runStatus: "idle",
+          outputs: [],
+          localContent: cell.content,
+          dirty: false,
+        };
+        s.cellOrder.push(cell.id);
+        s.activeCellId = cell.id;
       });
-      return resp.data;
+      return cell;
+    },
+
+    updateCell: (workspaceId, cellId, payload) => {
+      // Optimistic update — fire API call in background
+      api.patch(`/api/v1/workspaces/${workspaceId}/cells/${cellId}`, payload).catch(() => {});
+      set((s) => {
+        const cs = s.cellStates[cellId];
+        if (!cs) return;
+        if (payload.content !== undefined) {
+          cs.cell.content = payload.content;
+          cs.localContent = payload.content;
+          cs.dirty = false;
+        }
+        if (payload.position_x !== undefined) cs.cell.position_x = payload.position_x;
+        if (payload.position_y !== undefined) cs.cell.position_y = payload.position_y;
+        if (payload.width !== undefined) cs.cell.width = payload.width;
+        if (payload.height !== undefined) cs.cell.height = payload.height;
+      });
+    },
+
+    updateCellSync: async (workspaceId, cellId, payload) => {
+      // Awaitable version — waits for the PATCH to complete before returning
+      await api.patch(`/api/v1/workspaces/${workspaceId}/cells/${cellId}`, payload);
+      set((s) => {
+        const cs = s.cellStates[cellId];
+        if (!cs) return;
+        if (payload.content !== undefined) {
+          cs.cell.content = payload.content;
+          cs.localContent = payload.content;
+          cs.dirty = false;
+        }
+      });
+    },
+
+    updateCellContent: (cellId, content) => {
+      set((s) => {
+        const cs = s.cellStates[cellId];
+        if (!cs) return;
+        cs.localContent = content;
+        cs.dirty = content !== cs.cell.content;
+      });
+    },
+
+    deleteCell: async (cellId, workspaceId) => {
+      await api.delete(`/api/v1/workspaces/${workspaceId}/cells/${cellId}`);
+      set((s) => {
+        delete s.cellStates[cellId];
+        s.cellOrder = s.cellOrder.filter((id) => id !== cellId);
+        if (s.activeCellId === cellId) s.activeCellId = null;
+      });
     },
 
     updateCellPosition: async (cellId, workspaceId, x, y) => {
@@ -119,26 +221,57 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
         position_y: y,
       });
       set((s) => {
-        const cell = s.cells.find((c) => c.id === cellId);
-        if (cell) {
-          cell.position_x = x;
-          cell.position_y = y;
+        const cs = s.cellStates[cellId];
+        if (cs) {
+          cs.cell.position_x = x;
+          cs.cell.position_y = y;
         }
       });
     },
 
-    deleteCell: async (cellId, workspaceId) => {
-      await api.delete(
-        `/api/v1/workspaces/${workspaceId}/cells/${cellId}`
-      );
+    reorderCells: (orderedIds) => {
+      set((s) => { s.cellOrder = orderedIds; });
+    },
+
+    // ── Execution ───────────────────────────────────────────────────────
+
+    setActiveCellId: (id) => set((s) => { s.activeCellId = id; }),
+
+    setCellRunStatus: (cellId, status) => {
       set((s) => {
-        s.cells = s.cells.filter((c) => c.id !== cellId);
+        const cs = s.cellStates[cellId];
+        if (cs) cs.runStatus = status;
       });
     },
 
-    clearError: () =>
+    appendCellOutput: (cellId, output) => {
       set((s) => {
-        s.error = null;
-      }),
+        const cs = s.cellStates[cellId];
+        if (cs) cs.outputs.push(output);
+      });
+    },
+
+    setCellOutputs: (cellId, outputs) => {
+      set((s) => {
+        const cs = s.cellStates[cellId];
+        if (cs) cs.outputs = outputs;
+      });
+    },
+
+    clearCellOutputs: (cellId) => {
+      set((s) => {
+        const cs = s.cellStates[cellId];
+        if (cs) cs.outputs = [];
+      });
+    },
+
+    setKernelStatus: (status) => set((s) => { s.kernelStatus = status; }),
+    setIsRunningAll: (running) => set((s) => { s.isRunningAll = running; }),
+
+    // ── Zoom ────────────────────────────────────────────────────────────
+
+    setZoom: (zoom) => set((s) => { s.zoom = Math.max(0.5, Math.min(2, zoom)); }),
+
+    clearError: () => set((s) => { s.error = null; }),
   }))
 );

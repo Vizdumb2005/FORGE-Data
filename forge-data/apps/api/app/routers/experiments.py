@@ -1,6 +1,5 @@
 """Experiments router — MLflow experiment and run tracking."""
 
-from datetime import datetime
 from typing import Any
 
 import httpx
@@ -8,7 +7,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from app.config import settings
-from app.dependencies import CurrentUser, DBSession
+from app.dependencies import CurrentUser
 
 router = APIRouter()
 
@@ -58,9 +57,7 @@ async def list_experiments(current_user: CurrentUser) -> list[ExperimentRead]:
 
 
 @router.get("/{experiment_id}", response_model=ExperimentRead, summary="Get an experiment")
-async def get_experiment(
-    experiment_id: str, current_user: CurrentUser
-) -> ExperimentRead:
+async def get_experiment(experiment_id: str, current_user: CurrentUser) -> ExperimentRead:
     data = await _mlflow_get(
         "/api/2.0/mlflow/experiments/get",
         {"experiment_id": experiment_id},
@@ -99,7 +96,7 @@ async def list_runs(
 
 @router.get("/{experiment_id}/runs/{run_id}", response_model=RunRead, summary="Get a run")
 async def get_run(
-    experiment_id: str,  # noqa: ARG001
+    experiment_id: str,
     run_id: str,
     current_user: CurrentUser,
 ) -> RunRead:
@@ -108,6 +105,7 @@ async def get_run(
 
 
 # ── MLflow API helpers ─────────────────────────────────────────────────────────
+
 
 async def _mlflow_get(path: str, params: dict[str, Any] | None = None) -> dict:
     base = settings.mlflow_tracking_uri.rstrip("/")
@@ -118,6 +116,7 @@ async def _mlflow_get(path: str, params: dict[str, Any] | None = None) -> dict:
             return r.json()
     except Exception as exc:
         from app.core.exceptions import ServiceUnavailableException
+
         raise ServiceUnavailableException("MLflow") from exc
 
 
@@ -130,6 +129,7 @@ async def _mlflow_post(path: str, body: dict[str, Any]) -> dict:
             return r.json()
     except Exception as exc:
         from app.core.exceptions import ServiceUnavailableException
+
         raise ServiceUnavailableException("MLflow") from exc
 
 

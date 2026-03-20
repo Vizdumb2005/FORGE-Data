@@ -2,23 +2,28 @@
 
 from app.models.audit_log import AuditLog
 from app.models.cell import Cell, CellLanguage, CellType
+from app.models.data_quality import DataQualityReport, DataQualityRuleset
 from app.models.dataset import Dataset, SourceType
+from app.models.dataset_version import DatasetVersion
 from app.models.experiment import Experiment, ExperimentRun
 from app.models.user import LLMProvider, User
 from app.models.workspace import MemberRole, Workspace, WorkspaceMember
 
 __all__ = [
-    "User",
-    "LLMProvider",
-    "Workspace",
-    "WorkspaceMember",
-    "MemberRole",
-    "Dataset",
-    "SourceType",
+    "AuditLog",
     "Cell",
-    "CellType",
     "CellLanguage",
+    "CellType",
+    "DataQualityReport",
+    "DataQualityRuleset",
+    "Dataset",
+    "DatasetVersion",
     "Experiment",
     "ExperimentRun",
-    "AuditLog",
+    "LLMProvider",
+    "MemberRole",
+    "SourceType",
+    "User",
+    "Workspace",
+    "WorkspaceMember",
 ]

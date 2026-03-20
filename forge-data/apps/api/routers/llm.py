@@ -1,8 +1,10 @@
+import json
+from collections.abc import AsyncIterator
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Literal, AsyncIterator
-import json
 
 router = APIRouter()
 
@@ -71,7 +73,11 @@ async def list_providers() -> list[dict]:
         {
             "id": "anthropic",
             "name": "Anthropic",
-            "models": ["claude-opus-4-5-20251101", "claude-sonnet-4-5-20251101", "claude-haiku-3-5-20251022"],
+            "models": [
+                "claude-opus-4-5-20251101",
+                "claude-sonnet-4-5-20251101",
+                "claude-haiku-3-5-20251022",
+            ],
             "requires_key": True,
         },
         {

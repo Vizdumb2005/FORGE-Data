@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Plus, LayoutDashboard, Database, FlaskConical, ScrollText } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useWorkspace } from "@/lib/hooks/useWorkspace";
@@ -33,23 +33,24 @@ export default function DashboardPage() {
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingActivity, setLoadingActivity] = useState(true);
 
-  const greeting = useMemo(() => getGreeting(), []);
+  const [greeting, setGreeting] = useState("Welcome");
   const firstName = user?.full_name?.split(" ")[0] ?? user?.email ?? "";
+
+  // Compute greeting on client only to avoid SSR/client hydration mismatch
+  useEffect(() => {
+    setGreeting(getGreeting());
+  }, []);
 
   // Fetch stats
   useEffect(() => {
     async function loadStats() {
       try {
-        const [datasetsResp, experimentsResp] = await Promise.allSettled([
-          api.get("/api/v1/datasets"),
+        const [experimentsResp] = await Promise.allSettled([
           api.get("/api/v1/experiments"),
         ]);
         setStats({
           workspaces: workspaces.length,
-          datasets:
-            datasetsResp.status === "fulfilled"
-              ? (datasetsResp.value.data as unknown[]).length
-              : 0,
+          datasets: 0,
           experiments:
             experimentsResp.status === "fulfilled"
               ? (experimentsResp.value.data as unknown[]).length
