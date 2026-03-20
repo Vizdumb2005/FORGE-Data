@@ -4,8 +4,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.models.user import LLMProvider
-
 # ── Registration / Login ─────────────────────────────────────────────────────
 
 
@@ -40,7 +38,7 @@ class LoginRequest(BaseModel):
 
 class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=255)
-    preferred_llm_provider: LLMProvider | None = None
+    preferred_llm_provider: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 # ── API key management ────────────────────────────────────────────────────────
@@ -50,10 +48,12 @@ class ApiKeysUpdate(BaseModel):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     ollama_base_url: str | None = None
+    provider_api_keys: dict[str, str | None] | None = None
+    provider_settings: dict[str, dict] | None = None
 
 
 class ApiKeysTestRequest(BaseModel):
-    provider: LLMProvider
+    provider: str
 
 
 class ApiKeysTestResponse(BaseModel):
@@ -67,7 +67,7 @@ class ApiKeysTestResponse(BaseModel):
 class UserUpdateLLMKeys(BaseModel):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
-    preferred_llm_provider: LLMProvider | None = None
+    preferred_llm_provider: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 # ── Response schemas ─────────────────────────────────────────────────────────

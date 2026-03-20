@@ -280,7 +280,19 @@ export interface ExecuteResponse {
 
 // ── AI ────────────────────────────────────────────────────────────────────────
 
-export type LLMProvider = "openai" | "anthropic" | "ollama" | "google" | "azure";
+export type LLMProvider = string;
+
+export interface AIProviderOption {
+  id: string;
+  name: string;
+  models: string[];
+  default_model: string;
+  configured: boolean;
+  requires_api_key: boolean;
+  local?: boolean;
+  priority?: number;
+  required_settings?: string[];
+}
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system";

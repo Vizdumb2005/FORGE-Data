@@ -2,11 +2,13 @@
 
 from fastapi import APIRouter
 
+from app.core.llm_provider import ProviderRegistry
 from app.core.security import decrypt_field, encrypt_field
 from app.dependencies import CurrentUser, DBSession
 from app.schemas.user import UserRead, UserUpdate, UserUpdateLLMKeys
 
 router = APIRouter()
+provider_registry = ProviderRegistry()
 
 
 @router.get("/me", response_model=UserRead, summary="Get current user profile")
@@ -23,7 +25,10 @@ async def update_me(
     if payload.full_name is not None:
         current_user.full_name = payload.full_name
     if payload.preferred_llm_provider is not None:
-        current_user.preferred_llm_provider = payload.preferred_llm_provider.value
+        selected = payload.preferred_llm_provider.lower()
+        if selected not in provider_registry.providers:
+            selected = provider_registry.default_provider
+        current_user.preferred_llm_provider = selected
     return UserRead.from_orm_with_flags(current_user)
 
 
@@ -50,7 +55,10 @@ async def update_llm_keys(
             encrypt_field(payload.anthropic_api_key) if payload.anthropic_api_key else None
         )
     if payload.preferred_llm_provider is not None:
-        current_user.preferred_llm_provider = payload.preferred_llm_provider.value
+        selected = payload.preferred_llm_provider.lower()
+        if selected not in provider_registry.providers:
+            selected = provider_registry.default_provider
+        current_user.preferred_llm_provider = selected
 
     return UserRead.from_orm_with_flags(current_user)
 

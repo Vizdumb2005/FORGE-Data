@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.core.code_generator import CodeGenerator, WorkspaceContext
 from app.core.exceptions import NotFoundException
-from app.core.llm_provider import LLMProvider
+from app.core.llm_provider import LLMProvider, ProviderRegistry
 from app.core.pipeline_engine import AgenticPipelineEngine
 from app.core.semantic_layer import SemanticLayer
 from app.core.stat_advisor import StatisticalAdvisor
@@ -26,6 +26,7 @@ from app.services import dataset_service, workspace_service
 router = APIRouter()
 
 llm_provider = LLMProvider()
+provider_registry = ProviderRegistry()
 code_generator = CodeGenerator(llm_provider=llm_provider)
 stat_advisor = StatisticalAdvisor(llm_provider=llm_provider)
 
@@ -63,7 +64,7 @@ class ChatRequest(BaseModel):
     workspace_id: str
     message: str = Field(min_length=1)
     history: list[dict[str, str]] = Field(default_factory=list)
-    provider: Literal["openai", "anthropic", "ollama"] | None = None
+    provider: str | None = None
     model: str | None = None
 
 
@@ -80,26 +81,7 @@ class PipelineRunRequest(BaseModel):
 
 @router.get("/providers", summary="List available AI model providers")
 async def list_providers(current_user: CurrentUser) -> list[dict[str, Any]]:
-    return [
-        {
-            "id": "openai",
-            "name": "OpenAI",
-            "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
-            "configured": bool(current_user.openai_api_key),
-        },
-        {
-            "id": "anthropic",
-            "name": "Anthropic",
-            "models": ["claude-3-5-sonnet-latest", "claude-3-haiku"],
-            "configured": bool(current_user.anthropic_api_key),
-        },
-        {
-            "id": "ollama",
-            "name": "Ollama",
-            "models": ["llama3.1", "codellama", "mistral"],
-            "configured": bool(current_user.ollama_base_url),
-        },
-    ]
+    return provider_registry.list_for_user(current_user)
 
 
 @router.post("/workspaces/{workspace_id}/generate", summary="Generate code from natural language")

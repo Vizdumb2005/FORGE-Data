@@ -31,17 +31,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
-import type { CellLanguage, CellType } from "@/types";
+import type { AIProviderOption, CellLanguage, CellType } from "@/types";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 const ReactMarkdown = dynamic(() => import("react-markdown"), { ssr: false });
-
-type ChatModelId =
-  | "gpt-4o"
-  | "gpt-4o-mini"
-  | "claude-3-5-sonnet-latest"
-  | "claude-3-haiku"
-  | "llama3.1";
 
 type ChatLanguage = "auto" | "python" | "sql" | "r";
 
@@ -63,33 +56,13 @@ interface PanelMessage {
   complete?: boolean;
 }
 
-const MODELS: Array<{
-  id: ChatModelId;
+interface ModelChoice {
+  id: string;
   label: string;
-  provider: "openai" | "anthropic" | "ollama";
-  capabilityKey: "has_openai_key" | "has_anthropic_key" | "has_ollama_url";
-}> = [
-  { id: "gpt-4o", label: "GPT-4o", provider: "openai", capabilityKey: "has_openai_key" },
-  {
-    id: "gpt-4o-mini",
-    label: "GPT-4o Mini",
-    provider: "openai",
-    capabilityKey: "has_openai_key",
-  },
-  {
-    id: "claude-3-5-sonnet-latest",
-    label: "Claude 3.5 Sonnet",
-    provider: "anthropic",
-    capabilityKey: "has_anthropic_key",
-  },
-  {
-    id: "claude-3-haiku",
-    label: "Claude 3 Haiku",
-    provider: "anthropic",
-    capabilityKey: "has_anthropic_key",
-  },
-  { id: "llama3.1", label: "Llama 3.1 (Ollama)", provider: "ollama", capabilityKey: "has_ollama_url" },
-];
+  provider: string;
+  configured: boolean;
+  local: boolean;
+}
 
 const QUICK_ACTIONS = [
   "📊 Visualize this dataset",
@@ -106,25 +79,71 @@ export default function ChatPanel({ workspaceId, width, onClose }: ChatPanelProp
   const [messages, setMessages] = useState<PanelMessage[]>([]);
   const [input, setInput] = useState("");
   const [language, setLanguage] = useState<ChatLanguage>("auto");
-  const [modelId, setModelId] = useState<ChatModelId>("gpt-4o");
+  const [modelId, setModelId] = useState<string>("");
+  const [providers, setProviders] = useState<AIProviderOption[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [justInsertedCellId, setJustInsertedCellId] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const currentModel = useMemo(() => MODELS.find((m) => m.id === modelId) ?? MODELS[0], [modelId]);
-
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY) as ChatModelId | null;
-    if (saved && MODELS.some((m) => m.id === saved)) {
-      setModelId(saved);
+  const modelChoices = useMemo<ModelChoice[]>(() => {
+    const sortedProviders = [...providers].sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999));
+    const choices: ModelChoice[] = [];
+    for (const provider of sortedProviders) {
+      for (const model of provider.models) {
+        choices.push({
+          id: `${provider.id}:${model}`,
+          label: `${model} (${provider.name})`,
+          provider: provider.id,
+          configured: provider.configured,
+          local: Boolean(provider.local),
+        });
+      }
     }
-  }, []);
+    return choices;
+  }, [providers]);
+
+  const currentModel = useMemo(
+    () => modelChoices.find((m) => m.id === modelId) ?? modelChoices[0] ?? null,
+    [modelChoices, modelId],
+  );
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, modelId);
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved && modelChoices.some((m) => m.id === saved)) {
+      setModelId(saved);
+      return;
+    }
+    if (!modelId && modelChoices.length > 0) {
+      const localConfigured = modelChoices.find((m) => m.local && m.configured);
+      setModelId(localConfigured?.id ?? modelChoices[0].id);
+    }
+  }, [modelChoices, modelId]);
+
+  useEffect(() => {
+    if (modelId) {
+      localStorage.setItem(STORAGE_KEY, modelId);
+    }
   }, [modelId]);
+
+  useEffect(() => {
+    const loadProviders = async () => {
+      try {
+        const resp = await fetch("/api/v1/ai/providers", {
+          headers: {
+            ...(getAccessToken() ? { Authorization: `Bearer ${getAccessToken()}` } : {}),
+          },
+        });
+        if (!resp.ok) return;
+        const data = (await resp.json()) as AIProviderOption[];
+        setProviders(data);
+      } catch {
+        // Keep existing UX if providers API fails.
+      }
+    };
+    void loadProviders();
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -216,8 +235,8 @@ export default function ChatPanel({ workspaceId, width, onClose }: ChatPanelProp
               ? text
               : `[Prefer ${language.toUpperCase()} when generating code]\n${text}`,
           history,
-          provider: currentModel.provider,
-          model: currentModel.id,
+          provider: currentModel?.provider,
+          model: currentModel?.id?.split(":")[1],
         }),
       });
 
@@ -313,10 +332,7 @@ export default function ChatPanel({ workspaceId, width, onClose }: ChatPanelProp
     }
   };
 
-  const userHasProviderAccess = (model: (typeof MODELS)[number]) => {
-    if (!user) return false;
-    return Boolean(user[model.capabilityKey]);
-  };
+  const hasConfiguredModel = (model: ModelChoice) => model.configured;
 
   return (
     <TooltipProvider>
@@ -333,16 +349,16 @@ export default function ChatPanel({ workspaceId, width, onClose }: ChatPanelProp
           <div className="flex items-center gap-1">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="rounded-md border border-forge-border bg-forge-bg px-2 py-1 text-xs text-foreground hover:bg-forge-border">
-                  {currentModel.label}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {MODELS.map((model) => {
-                  const enabled = userHasProviderAccess(model);
-                  const row = (
-                    <DropdownMenuItem
-                      key={model.id}
+                  <button className="rounded-md border border-forge-border bg-forge-bg px-2 py-1 text-xs text-foreground hover:bg-forge-border">
+                    {currentModel?.label ?? "Select model"}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {modelChoices.map((model) => {
+                    const enabled = hasConfiguredModel(model);
+                    const row = (
+                      <DropdownMenuItem
+                        key={model.id}
                       disabled={!enabled}
                       onClick={() => enabled && setModelId(model.id)}
                       className="flex items-center justify-between gap-3"
@@ -350,14 +366,14 @@ export default function ChatPanel({ workspaceId, width, onClose }: ChatPanelProp
                       <span>{model.label}</span>
                       {model.id === modelId && <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />}
                     </DropdownMenuItem>
-                  );
+                    );
                   if (enabled) return row;
                   return (
                     <Tooltip key={model.id}>
                       <TooltipTrigger asChild>
                         <div>{row}</div>
                       </TooltipTrigger>
-                      <TooltipContent>Configure key in Settings</TooltipContent>
+                      <TooltipContent>Configure provider in Settings</TooltipContent>
                     </Tooltip>
                   );
                 })}

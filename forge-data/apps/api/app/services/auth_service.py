@@ -240,14 +240,28 @@ async def test_api_key(user: User, provider: str) -> dict[str, Any]:
 
     Returns {"valid": True/False, "error": "..."}.
     """
+    provider = provider.lower()
     if provider == "openai":
         return await _test_openai_key(user)
-    elif provider == "anthropic":
+    if provider == "anthropic":
         return await _test_anthropic_key(user)
-    elif provider == "ollama":
+    if provider == "ollama":
         return await _test_ollama_connection(user)
-    else:
-        return {"valid": False, "error": f"Unsupported provider: {provider}"}
+    if provider == "llama_cpp":
+        return await _test_openai_compatible_local(user, "llama_cpp")
+    if provider == "gpt4all":
+        return await _test_openai_compatible_local(user, "gpt4all")
+    if provider == "vllm":
+        return await _test_openai_compatible_local(user, "vllm")
+    if provider == "gemini":
+        return await _test_gemini_key(user)
+    return {
+        "valid": False,
+        "error": (
+            f"Provider '{provider}' is not supported in key-test yet. "
+            "If this is a new provider, add a test handler in auth_service."
+        ),
+    }
 
 
 async def _test_openai_key(user: User) -> dict[str, Any]:
@@ -296,16 +310,66 @@ async def _test_anthropic_key(user: User) -> dict[str, Any]:
         return {"valid": False, "error": str(exc)}
 
 
+async def _test_gemini_key(user: User) -> dict[str, Any]:
+    provider_keys = user.llm_api_keys or {}
+    encrypted = provider_keys.get("gemini") if isinstance(provider_keys, dict) else None
+    raw_key = _resolve_key(encrypted, settings.google_ai_api_key)
+    if not raw_key:
+        return {
+            "valid": False,
+            "error": "Gemini is not configured. Add your Gemini API key in Settings > AI API Keys.",
+        }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://generativelanguage.googleapis.com/v1beta/models",
+                params={"key": raw_key},
+            )
+        if resp.status_code == 200:
+            return {"valid": True, "error": None}
+        return {"valid": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+    except Exception as exc:
+        return {"valid": False, "error": str(exc)}
+
+
 async def _test_ollama_connection(user: User) -> dict[str, Any]:
-    url = user.ollama_base_url or settings.ollama_base_url
+    provider_settings = user.llm_provider_config or {}
+    ollama_config = provider_settings.get("ollama", {}) if isinstance(provider_settings, dict) else {}
+    url = ollama_config.get("base_url") or user.ollama_base_url or settings.ollama_base_url
     if not url:
-        return {"valid": False, "error": "No Ollama base URL configured"}
+        return {
+            "valid": False,
+            "error": "Ollama is not configured. Add a local endpoint URL in Settings > AI API Keys.",
+        }
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(f"{url.rstrip('/')}/api/tags")
         if resp.status_code == 200:
             return {"valid": True, "error": None}
         return {"valid": False, "error": f"HTTP {resp.status_code}"}
+    except Exception as exc:
+        return {"valid": False, "error": str(exc)}
+
+
+async def _test_openai_compatible_local(user: User, provider: str) -> dict[str, Any]:
+    provider_settings = user.llm_provider_config or {}
+    provider_config = provider_settings.get(provider, {}) if isinstance(provider_settings, dict) else {}
+    base_url = provider_config.get("base_url")
+    if not base_url:
+        return {
+            "valid": False,
+            "error": (
+                f"{provider} is not configured. Set base_url in Settings > AI API Keys "
+                "under provider settings."
+            ),
+        }
+    url = str(base_url).rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{url}/models")
+        if resp.status_code == 200:
+            return {"valid": True, "error": None}
+        return {"valid": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
     except Exception as exc:
         return {"valid": False, "error": str(exc)}
 

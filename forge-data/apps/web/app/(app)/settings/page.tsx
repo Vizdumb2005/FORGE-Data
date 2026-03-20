@@ -85,7 +85,7 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between pt-1 border-t border-forge-border/60">
               <span className="text-foreground">Preferred provider</span>
               <span className="text-forge-muted capitalize">
-                {user?.preferred_llm_provider ?? "openai"}
+                {user?.preferred_llm_provider ?? "ollama"}
               </span>
             </div>
           </div>

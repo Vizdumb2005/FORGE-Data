@@ -1,0 +1,98 @@
+{
+  "default_provider": "ollama",
+  "providers": {
+    "ollama": {
+      "display_name": "Ollama",
+      "protocol": "ollama",
+      "default_model": "llama3.1",
+      "models": ["llama3.1", "codellama", "mistral"],
+      "local": true,
+      "priority": 1,
+      "base_url_env": "OLLAMA_BASE_URL",
+      "requires_api_key": false,
+      "required_settings": ["base_url"],
+      "runtime_options": {
+        "num_ctx": 8192,
+        "temperature": 0.2
+      }
+    },
+    "llama_cpp": {
+      "display_name": "llama.cpp",
+      "protocol": "openai_compatible",
+      "default_model": "llama-3.1-8b-instruct",
+      "models": ["llama-3.1-8b-instruct", "mistral-7b-instruct", "phi-3-mini"],
+      "local": true,
+      "priority": 2,
+      "base_url_env": "LLAMA_CPP_BASE_URL",
+      "base_url": "http://localhost:8080/v1",
+      "requires_api_key": false,
+      "required_settings": ["base_url", "model_path"],
+      "runtime_options": {
+        "temperature": 0.2
+      }
+    },
+    "gpt4all": {
+      "display_name": "GPT4All",
+      "protocol": "openai_compatible",
+      "default_model": "gpt4all-falcon-q4_0",
+      "models": ["gpt4all-falcon-q4_0", "orca-mini-3b", "mpt-7b-chat"],
+      "local": true,
+      "priority": 3,
+      "base_url_env": "GPT4ALL_BASE_URL",
+      "base_url": "http://localhost:4891/v1",
+      "requires_api_key": false,
+      "required_settings": ["base_url", "model_path"],
+      "runtime_options": {
+        "temperature": 0.2
+      }
+    },
+    "vllm": {
+      "display_name": "vLLM",
+      "protocol": "openai_compatible",
+      "default_model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+      "models": [
+        "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        "mistralai/Mistral-7B-Instruct-v0.2",
+        "Qwen/Qwen2.5-7B-Instruct"
+      ],
+      "local": true,
+      "priority": 4,
+      "base_url_env": "VLLM_BASE_URL",
+      "base_url": "http://localhost:8001/v1",
+      "requires_api_key": false,
+      "required_settings": ["base_url"],
+      "runtime_options": {
+        "temperature": 0.2,
+        "top_p": 0.95
+      }
+    },
+    "openai": {
+      "display_name": "OpenAI",
+      "protocol": "openai",
+      "default_model": "gpt-4o-mini",
+      "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
+      "local": false,
+      "priority": 100,
+      "api_key_env": "OPENAI_API_KEY"
+    },
+    "anthropic": {
+      "display_name": "Anthropic",
+      "protocol": "anthropic",
+      "default_model": "claude-3-5-sonnet-latest",
+      "models": ["claude-3-5-sonnet-latest", "claude-3-haiku"],
+      "local": false,
+      "priority": 110,
+      "api_key_env": "ANTHROPIC_API_KEY"
+    },
+    "gemini": {
+      "display_name": "Google Gemini",
+      "protocol": "openai_compatible",
+      "default_model": "gemini-2.0-flash",
+      "models": ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
+      "local": false,
+      "priority": 120,
+      "api_key_env": "GOOGLE_AI_API_KEY",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai"
+    }
+  }
+}

@@ -14,6 +14,7 @@ from slowapi.util import get_remote_address
 
 from app.config import settings
 from app.core.exceptions import InvalidCredentialsException
+from app.core.llm_provider import ProviderRegistry
 from app.core.security import encrypt_field, verify_token
 from app.dependencies import CurrentUser, DBSession
 from app.schemas.user import (
@@ -35,6 +36,7 @@ from app.services import audit_service, auth_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+provider_registry = ProviderRegistry()
 
 # ── Rate limiter (attached to the FastAPI app in main.py) ─────────────────────
 
@@ -312,7 +314,10 @@ async def update_me(
     if payload.full_name is not None:
         current_user.full_name = payload.full_name
     if payload.preferred_llm_provider is not None:
-        current_user.preferred_llm_provider = payload.preferred_llm_provider.value
+        selected = payload.preferred_llm_provider.lower()
+        if selected not in provider_registry.providers:
+            selected = provider_registry.default_provider
+        current_user.preferred_llm_provider = selected
     return UserRead.from_orm_with_flags(current_user)
 
 
@@ -341,6 +346,31 @@ async def update_api_keys(
         )
     if payload.ollama_base_url is not None:
         current_user.ollama_base_url = payload.ollama_base_url or None
+    if payload.provider_api_keys is not None:
+        existing = current_user.llm_api_keys or {}
+        for provider_id, raw_key in payload.provider_api_keys.items():
+            key = provider_id.lower()
+            if key not in provider_registry.providers:
+                continue
+            if raw_key:
+                existing[key] = encrypt_field(raw_key)
+            else:
+                existing.pop(key, None)
+        current_user.llm_api_keys = existing
+    if payload.provider_settings is not None:
+        existing_settings = current_user.llm_provider_config or {}
+        for provider_id, provider_config in payload.provider_settings.items():
+            key = provider_id.lower()
+            if key not in provider_registry.providers:
+                continue
+            if not isinstance(provider_config, dict):
+                continue
+            merged = dict(existing_settings.get(key, {}))
+            merged.update(provider_config)
+            existing_settings[key] = merged
+        current_user.llm_provider_config = existing_settings
+    if payload.provider_settings and payload.provider_settings.get("ollama", {}).get("base_url"):
+        current_user.ollama_base_url = payload.provider_settings["ollama"]["base_url"] or None
     return MessageResponse(message="API keys updated")
 
 
@@ -358,5 +388,5 @@ async def test_api_key(
     payload: ApiKeysTestRequest,
     current_user: CurrentUser,
 ) -> ApiKeysTestResponse:
-    result = await auth_service.test_api_key(current_user, payload.provider.value)
+    result = await auth_service.test_api_key(current_user, payload.provider)
     return ApiKeysTestResponse(**result)
