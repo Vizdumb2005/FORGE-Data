@@ -88,7 +88,7 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
     fetchWorkspaces: async () => {
       set((s) => { s.loading = true; });
       try {
-        const resp = await api.get<Workspace[]>("/api/v1/workspaces/");
+        const resp = await api.get<Workspace[]>("/api/v1/workspaces");
         set((s) => { s.workspaces = resp.data; s.loading = false; });
       } catch {
         set((s) => { s.loading = false; });
@@ -96,7 +96,7 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
     },
 
     createWorkspace: async (payload) => {
-      const resp = await api.post<Workspace>("/api/v1/workspaces/", payload);
+      const resp = await api.post<Workspace>("/api/v1/workspaces", payload);
       set((s) => { s.workspaces.unshift(resp.data); });
       return resp.data;
     },

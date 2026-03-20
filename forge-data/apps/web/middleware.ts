@@ -32,7 +32,9 @@ export function middleware(req: NextRequest) {
   }
 
   const requestHeaders = new Headers(req.headers);
-  requestHeaders.set("x-forwarded-host", req.headers.get("host") || "");
+  const host = req.headers.get("host") || "";
+  console.log("[middleware] Processing:", pathname, "Host:", host);
+  requestHeaders.set("x-forwarded-host", host);
   requestHeaders.set("x-forwarded-proto", req.nextUrl.protocol.replace(":", ""));
 
   return NextResponse.next({

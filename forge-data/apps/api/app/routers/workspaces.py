@@ -30,12 +30,8 @@ router = APIRouter()
 # =============================================================================
 
 
-@router.post(
-    "/",
-    response_model=WorkspaceRead,
-    status_code=201,
-    summary="Create a workspace",
-)
+@router.post("", response_model=WorkspaceRead, status_code=201, summary="Create a workspace")
+@router.post("/", include_in_schema=False)
 async def create_workspace(
     payload: WorkspaceCreate,
     current_user: CurrentUser,
@@ -73,11 +69,8 @@ async def create_workspace(
 # =============================================================================
 
 
-@router.get(
-    "/",
-    response_model=list[WorkspaceRead],
-    summary="List accessible workspaces",
-)
+@router.get("", response_model=list[WorkspaceRead], summary="List accessible workspaces")
+@router.get("/", include_in_schema=False)
 async def list_workspaces(
     current_user: CurrentUser,
     db: DBSession,

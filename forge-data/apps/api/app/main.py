@@ -28,6 +28,7 @@ from app.routers import (
     health,
     users,
     workspaces,
+    audit,
 )
 
 logger = logging.getLogger(__name__)
@@ -195,6 +196,7 @@ def create_app() -> FastAPI:
     app.include_router(ai.router, prefix=f"{v1}/ai", tags=["ai"])
     app.include_router(connectors.router, prefix=f"{v1}/connectors", tags=["connectors"])
     app.include_router(experiments.router, prefix=f"{v1}/experiments", tags=["experiments"])
+    app.include_router(audit.router, prefix=f"{v1}/audit", tags=["audit"])
 
     return app
 

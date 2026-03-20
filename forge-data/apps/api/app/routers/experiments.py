@@ -39,7 +39,8 @@ class RunRead(BaseModel):
     artifact_uri: str | None
 
 
-@router.get("/", response_model=list[ExperimentRead], summary="List MLflow experiments")
+@router.get("", response_model=list[ExperimentRead], summary="List MLflow experiments")
+@router.get("/", include_in_schema=False)
 async def list_experiments(current_user: CurrentUser) -> list[ExperimentRead]:
     """Proxy request to the MLflow tracking server."""
     data = await _mlflow_get("/api/2.0/mlflow/experiments/search", {"max_results": 200})
