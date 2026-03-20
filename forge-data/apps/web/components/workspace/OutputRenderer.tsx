@@ -23,11 +23,12 @@ export default function OutputRenderer({ outputs, maxHeight = "400px" }: OutputR
 }
 
 function OutputItem({ output }: { output: CellOutput }) {
-  const { mime_type, data } = output;
+  const mimeType = typeof output?.mime_type === "string" ? output.mime_type : "";
+  const data = (output?.data ?? {}) as Record<string, unknown>;
 
   // Stream stdout
-  if (mime_type === "stream/stdout") {
-    const text = (data as Record<string, unknown>).text as string;
+  if (mimeType === "stream/stdout") {
+    const text = data.text as string;
     return (
       <pre className="whitespace-pre-wrap px-3 py-1 font-mono text-xs text-forge-text bg-forge-bg/50">
         {text}
@@ -36,8 +37,8 @@ function OutputItem({ output }: { output: CellOutput }) {
   }
 
   // Stream stderr
-  if (mime_type === "stream/stderr") {
-    const text = (data as Record<string, unknown>).text as string;
+  if (mimeType === "stream/stderr") {
+    const text = data.text as string;
     return (
       <pre className="whitespace-pre-wrap px-3 py-1 font-mono text-xs text-amber-400 bg-forge-bg/50">
         {text}
@@ -46,14 +47,15 @@ function OutputItem({ output }: { output: CellOutput }) {
   }
 
   // Error with traceback
-  if (mime_type === "error") {
-    return <ErrorOutput data={data as Record<string, unknown>} />;
+  if (mimeType === "error") {
+    return <ErrorOutput data={data} />;
   }
 
   // Image
-  if (mime_type === "image/png" || mime_type.startsWith("image/")) {
-    const imgData = (data as Record<string, string>)["image/png"] ?? (data as Record<string, string>).image;
-    if (imgData) {
+  if (mimeType === "image/png" || mimeType.startsWith("image/")) {
+    const imageBag = data as Record<string, string>;
+    const imgData = imageBag["image/png"] ?? imageBag.image;
+    if (typeof imgData === "string" && imgData.length > 0) {
       const src = imgData.startsWith("data:") ? imgData : `data:image/png;base64,${imgData}`;
       return (
         <div className="p-3 bg-forge-bg/50">
@@ -65,8 +67,8 @@ function OutputItem({ output }: { output: CellOutput }) {
   }
 
   // HTML output — sandboxed iframe
-  if (mime_type === "text/html" || (data as Record<string, unknown>)["text/html"]) {
-    const html = ((data as Record<string, unknown>)["text/html"] ?? (data as Record<string, unknown>).text ?? "") as string;
+  if (mimeType === "text/html" || data["text/html"]) {
+    const html = (data["text/html"] ?? data.text ?? "") as string;
     return (
       <div className="p-3 bg-forge-bg/50">
         <iframe
@@ -82,8 +84,8 @@ function OutputItem({ output }: { output: CellOutput }) {
 
   // text/plain or fallback
   const text =
-    ((data as Record<string, unknown>)["text/plain"] as string) ??
-    ((data as Record<string, unknown>).text as string) ??
+    (data["text/plain"] as string) ??
+    (data.text as string) ??
     JSON.stringify(data, null, 2);
 
   return (
