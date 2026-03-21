@@ -1,14 +1,16 @@
 """Connectors router — test connectivity, introspect schema, upload, connect, query, versioning, quality."""
 
 import contextlib
+import ipaddress
 import json
 import logging
+import socket
 import tempfile
 from typing import Any, Literal
 
 import httpx
 from fastapi import APIRouter, Query, Request, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.config import settings
@@ -40,12 +42,63 @@ from app.schemas.versioning import (
 from app.services import audit_service, dataset_service, workspace_service
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter()
-
-# Module-level singletons (stateless — safe to share)
 _version_manager = DataVersionManager()
 _quality_engine = DataQualityEngine()
+
+# ── SSRF guard — block requests to private/loopback/link-local ranges ─────────
+
+_PRIVATE_NETS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local / cloud metadata
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+]
+
+
+def _assert_safe_url(url: str) -> None:
+    """Raise ValueError if *url* resolves to a private/internal IP address."""
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Only http/https URLs are permitted, got: {parsed.scheme!r}")
+    hostname = parsed.hostname or ""
+    try:
+        addr = ipaddress.ip_address(socket.gethostbyname(hostname))
+    except (socket.gaierror, ValueError) as exc:
+        raise ValueError(f"Cannot resolve hostname: {hostname!r}") from exc
+    for net in _PRIVATE_NETS:
+        if addr in net:
+            raise ValueError(f"URL resolves to a private/internal address: {addr}")
+
+
+# ── Allowed upload extensions and magic bytes ─────────────────────────────────
+
+_ALLOWED_EXTENSIONS = frozenset({"csv", "parquet", "xlsx", "xls", "json"})
+_MAX_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB hard cap at application layer
+_MAGIC_BYTES: dict[str, bytes] = {
+    "parquet": b"PAR1",
+    "xlsx": b"PK\x03\x04",
+    "xls": b"\xd0\xcf\x11\xe0",
+}
+
+
+def _validate_upload(filename: str, contents: bytes) -> str:
+    """Validate extension and magic bytes. Returns the normalised extension."""
+    if len(contents) > _MAX_UPLOAD_BYTES:
+        raise ValueError(f"File exceeds maximum allowed size of {_MAX_UPLOAD_BYTES // 1024 // 1024} MB")
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise ValueError(f"File type '.{ext}' is not allowed. Permitted: {sorted(_ALLOWED_EXTENSIONS)}")
+    magic = _MAGIC_BYTES.get(ext)
+    if magic and not contents.startswith(magic):
+        raise ValueError(f"File content does not match expected format for .{ext}")
+    return ext
+
+
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -107,6 +160,10 @@ async def test_connection(
     if config.type in ("postgres", "mysql"):
         result = await _test_sql_connection(config)
     elif config.type == "rest":
+        try:
+            _assert_safe_url(config.url or "")
+        except ValueError as exc:
+            return TestConnectionResponse(success=False, message=str(exc), latency_ms=0)
         result = await _test_rest_connection(config)
     elif config.type == "s3":
         result = await _test_s3_connection(config)
@@ -166,8 +223,13 @@ async def upload_dataset(
     filename = file.filename or "upload.csv"
     contents = await file.read()
 
-    # Determine source type from extension
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "csv"
+    # Validate extension and magic bytes; enforce size cap
+    from fastapi import HTTPException as _HTTPException
+    try:
+        ext = _validate_upload(filename, contents)
+    except ValueError as exc:
+        raise _HTTPException(status_code=400, detail=str(exc)) from exc
+
     source_type_map = {
         "csv": SourceType.csv,
         "parquet": SourceType.parquet,
@@ -320,7 +382,7 @@ async def list_datasets(
 
 @router.get(
     "/workspaces/{workspace_id}/datasets/{dataset_id}",
-    response_model=DatasetRead,
+    response_model=DatasetWithSchema,
     summary="Get a dataset with full schema and profile",
 )
 async def get_dataset(
@@ -328,10 +390,14 @@ async def get_dataset(
     dataset_id: str,
     current_user: CurrentUser,
     db: DBSession,
-) -> DatasetRead:
+) -> DatasetWithSchema:
     await workspace_service.get_workspace(db, workspace_id, current_user.id)
     dataset = await dataset_service.get_dataset(db, workspace_id, dataset_id)
-    return DatasetRead.from_orm_safe(dataset)
+    schema_info = dataset.schema_snapshot or []
+    return DatasetWithSchema(
+        dataset=DatasetRead.from_orm_safe(dataset),
+        schema_info=schema_info,
+    )
 
 
 @router.post(
@@ -365,11 +431,15 @@ async def execute_query(
             ip_address=request.client.host if request.client else None,
             metadata={"sql": payload.sql[:500], "error": exc.error},
         )
-        return QueryErrorResponse(
-            error=exc.error,
-            line=exc.line,
-            column=exc.column,
-            execution_time_ms=exc.execution_time_ms,
+        return JSONResponse(
+            status_code=400,
+            content=QueryErrorResponse(
+                error=exc.error,
+                detail=exc.error,
+                line=exc.line,
+                column=exc.column,
+                execution_time_ms=exc.execution_time_ms,
+            ).model_dump(),
         )
 
     await audit_service.log_event(
@@ -626,7 +696,7 @@ def _build_duckdb_config(source_type: SourceType, config: dict[str, Any]) -> dic
     if st in ("postgres", "mysql"):
         return {
             "type": st,
-            "host": config.get("host", "localhost"),
+            "host": config.get("host", ""),
             "port": config.get("port", 5432 if st == "postgres" else 3306),
             "database": config.get("database", ""),
             "username": config.get("username", ""),
@@ -721,12 +791,19 @@ async def _test_sql_connection(config: ConnectionConfig) -> tuple[bool, str]:
         import connectorx as cx
 
         driver = "postgresql" if config.type == "postgres" else "mysql"
-        conn_str = (
+        # Build connection string without embedding password in the string
+        # that may appear in exception messages
+        real_conn_str = (
             f"{driver}://{config.username}:{config.password}"
             f"@{config.host}:{config.port or 5432}/{config.database}"
         )
-        cx.read_sql(conn_str, "SELECT 1")
-        return True, "Connection successful"
+        try:
+            cx.read_sql(real_conn_str, "SELECT 1")
+            return True, "Connection successful"
+        except Exception as exc:
+            # Sanitise: replace the real password in the error message
+            safe_msg = str(exc).replace(config.password or "", "***") if config.password else str(exc)
+            return False, safe_msg
     except Exception as exc:
         return False, str(exc)
 

@@ -2,6 +2,7 @@
 
 from app.routers import (
     ai,
+    audit,
     auth,
     cells,
     connectors,
@@ -9,12 +10,14 @@ from app.routers import (
     execute,
     experiments,
     health,
+    setup,
     users,
     workspaces,
 )
 
 __all__ = [
     "ai",
+    "audit",
     "auth",
     "cells",
     "connectors",
@@ -22,6 +25,7 @@ __all__ = [
     "execute",
     "experiments",
     "health",
+    "setup",
     "users",
     "workspaces",
 ]

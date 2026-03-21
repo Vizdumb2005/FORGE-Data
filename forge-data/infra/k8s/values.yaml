@@ -67,7 +67,7 @@ postgresql:
   auth:
     database: forge
     username: forge
-    password: forge  # Override in production!
+    password: ""  # REQUIRED: set via --set or existingSecret at deploy time
   primary:
     persistence:
       enabled: true
@@ -88,7 +88,7 @@ minio:
   enabled: true
   auth:
     rootUser: forge
-    rootPassword: forgedata123  # Override in production!
+    rootPassword: ""  # REQUIRED: set via --set or existingSecret at deploy time
   persistence:
     enabled: true
     size: 50Gi
@@ -99,15 +99,20 @@ mlflow:
 
 # Environment — these map to your .env variables
 env:
-  JWT_SECRET: "change-me-in-production"
+  # REQUIRED: generate with: openssl rand -hex 32
+  JWT_SECRET: ""
   JWT_ALGORITHM: "HS256"
-  JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+  JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "15"
   JWT_REFRESH_TOKEN_EXPIRE_DAYS: "30"
+  # REQUIRED: generate with: openssl rand -hex 16
+  ENCRYPTION_SALT: ""
   NODE_ENV: "production"
   APP_ENV: "production"
   OPENAI_API_KEY: ""
   ANTHROPIC_API_KEY: ""
   OLLAMA_BASE_URL: ""
 
-# Secrets — use a Kubernetes Secret or external secrets manager in production
+# Secrets — use a Kubernetes Secret or external secrets manager in production.
+# Set existingSecret to the name of a pre-created Secret containing all
+# required keys (JWT_SECRET, ENCRYPTION_SALT, POSTGRES_PASSWORD, etc.).
 existingSecret: ""

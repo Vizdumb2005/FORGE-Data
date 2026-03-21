@@ -50,14 +50,9 @@ api.interceptors.response.use(
     original._retried = true;
 
     const refreshToken = getRefreshToken();
-    if (!refreshToken) {
-      _handleLogout();
-      return Promise.reject(error);
-    }
-
-    // Deduplicate concurrent refresh calls
+    // refreshToken is always null (httpOnly cookie) — proceed directly to refresh
     if (!_refreshing) {
-      _refreshing = _doRefresh(refreshToken).finally(() => {
+      _refreshing = _doRefresh().finally(() => {
         _refreshing = null;
       });
     }
@@ -74,13 +69,15 @@ api.interceptors.response.use(
   }
 );
 
-async function _doRefresh(refreshToken: string): Promise<string | null> {
+async function _doRefresh(): Promise<string | null> {
   try {
-    const resp = await axios.post<{
-      access_token: string;
-      refresh_token?: string;
-    }>(`${BASE_URL}/api/v1/auth/refresh`, { refresh_token: refreshToken });
-    setTokens(resp.data.access_token, resp.data.refresh_token ?? refreshToken);
+    // No body — the httpOnly refresh cookie is sent automatically by the browser.
+    const resp = await axios.post<{ access_token: string }>(
+      `${BASE_URL}/api/v1/auth/refresh`,
+      {},
+      { withCredentials: true },
+    );
+    setTokens(resp.data.access_token);
     return resp.data.access_token;
   } catch {
     clearTokens();

@@ -12,7 +12,7 @@ async def test_register_success(client: AsyncClient) -> None:
         "/api/v1/auth/register",
         json={
             "email": "newuser@example.com",
-            "password": "SecurePass1",
+            "password": "SecurePass12",
             "full_name": "New User",
         },
     )
@@ -28,7 +28,7 @@ async def test_register_duplicate_email(client: AsyncClient) -> None:
     """Registering with an existing email should return 409."""
     payload = {
         "email": "duplicate@example.com",
-        "password": "SecurePass1",
+        "password": "SecurePass12",
         "full_name": "Dup User",
     }
     resp = await client.post("/api/v1/auth/register", json=payload)
@@ -58,7 +58,7 @@ async def test_login_success(client: AsyncClient, registered_user: dict) -> None
         "/api/v1/auth/token",
         data={
             "username": "testuser@example.com",
-            "password": "SecurePass1",
+            "password": "SecurePass12",
         },
     )
     assert resp.status_code == 200, resp.text
@@ -113,7 +113,7 @@ async def test_token_refresh(client: AsyncClient, registered_user: dict) -> None
         "/api/v1/auth/token",
         data={
             "username": "testuser@example.com",
-            "password": "SecurePass1",
+            "password": "SecurePass12",
         },
     )
     refresh_token = login.json()["refresh_token"]

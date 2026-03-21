@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,22 @@ from app.core.security import decrypt_field
 from app.models.user import User
 
 _CONFIG_PATH = Path(__file__).with_name("llm_providers.json")
+
+# True when the process is running inside a Docker container.
+_IN_DOCKER: bool = os.path.exists("/.dockerenv") or bool(os.getenv("RUNNING_IN_DOCKER"))
+
+
+def _normalise_base_url(url: str) -> str:
+    """Rewrite localhost/127.0.0.1 to host.docker.internal when running inside
+    Docker so that local AI servers on the host machine are reachable.
+    Has no effect when the app is running outside Docker, or when the URL
+    already points somewhere other than localhost.
+    """
+    if not _IN_DOCKER:
+        return url
+    return url.replace("127.0.0.1", "host.docker.internal").replace(
+        "localhost", "host.docker.internal"
+    )
 
 
 @dataclass(slots=True)
@@ -178,19 +195,26 @@ class ProviderRegistry:
 
     def resolve_base_url(self, user: User, spec: ProviderSpec, settings: dict[str, Any] | None = None) -> str | None:
         resolved_settings = settings or self.resolve_provider_settings(user, spec)
-        if resolved_settings.get("base_url"):
-            return str(resolved_settings["base_url"])
 
-        if spec.provider_id == "ollama" and user.ollama_base_url:
-            return user.ollama_base_url
+        # 1. User-saved setting (highest priority — respects what the user configured)
+        candidate = resolved_settings.get("base_url") or None
 
-        if spec.base_url_env:
-            import os
+        # 2. Legacy per-user ollama_base_url column
+        if not candidate and spec.provider_id == "ollama" and user.ollama_base_url:
+            candidate = user.ollama_base_url
 
-            env_value = os.getenv(spec.base_url_env)
-            if env_value:
-                return env_value
-        return spec.base_url
+        # 3. Environment variable (platform-level override, e.g. set in docker-compose)
+        if not candidate and spec.base_url_env:
+            candidate = os.getenv(spec.base_url_env) or None
+
+        # 4. Static default from llm_providers.json (last resort)
+        if not candidate:
+            candidate = spec.base_url or None
+
+        if candidate:
+            candidate = _normalise_base_url(candidate)
+
+        return candidate or None
 
 
 class LLMProvider:
@@ -250,14 +274,18 @@ class LLMProvider:
             )
 
         if spec.protocol == "ollama":
-            resolved_base_url = (base_url or "http://localhost:11434").rstrip("/")
+            if not base_url:
+                raise ValidationError(
+                    "Ollama base URL is not configured. "
+                    "Set OLLAMA_BASE_URL in your environment or enter it in Settings > AI Configuration."
+                )
             return LLMClient(
                 provider=spec.provider_id,
                 protocol=spec.protocol,
                 model=selected_model,
                 client=None,
                 api_key=None,
-                base_url=resolved_base_url,
+                base_url=base_url.rstrip("/"),
                 runtime_options=runtime_options,
             )
 
@@ -389,7 +417,11 @@ class LLMProvider:
         stream: bool,
         max_tokens: int,
     ) -> AsyncIterator[str] | str:
-        base_url = (client.base_url or "http://localhost:11434").rstrip("/")
+        base_url = (client.base_url or "").rstrip("/")
+        if not base_url:
+            raise ValidationError(
+                "Ollama base URL is not set. Configure it in Settings > AI Configuration."
+            )
         options = {"num_predict": max_tokens}
         options.update(client.runtime_options)
         payload = {

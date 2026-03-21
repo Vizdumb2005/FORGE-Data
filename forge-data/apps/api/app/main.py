@@ -27,6 +27,7 @@ from app.routers import (
     execute,
     experiments,
     health,
+    setup,
     users,
     workspaces,
 )
@@ -143,9 +144,9 @@ def create_app() -> FastAPI:
             "Interactive data grids, conversational AI analysis, BYOK LLM support."
         ),
         version="0.1.0",
-        docs_url="/api/docs",
-        redoc_url="/api/redoc",
-        openapi_url="/api/openapi.json",
+        docs_url=None if settings.is_production else "/api/docs",
+        redoc_url=None if settings.is_production else "/api/redoc",
+        openapi_url=None if settings.is_production else "/api/openapi.json",
         lifespan=lifespan,
     )
 
@@ -158,8 +159,8 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
         expose_headers=["X-Request-ID", "X-Process-Time"],
     )
     if settings.app_env != "test":
@@ -197,6 +198,7 @@ def create_app() -> FastAPI:
     app.include_router(connectors.router, prefix=f"{v1}/connectors", tags=["connectors"])
     app.include_router(experiments.router, prefix=f"{v1}/experiments", tags=["experiments"])
     app.include_router(audit.router, prefix=f"{v1}/audit", tags=["audit"])
+    app.include_router(setup.router, prefix=f"{v1}/setup", tags=["setup"])
 
     return app
 

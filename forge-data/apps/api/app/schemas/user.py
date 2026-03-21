@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=12, max_length=128)
     full_name: str = Field(min_length=1, max_length=255)
 
     @field_validator("password")
@@ -18,11 +18,11 @@ class UserCreate(BaseModel):
         from zxcvbn import zxcvbn as _zxcvbn
 
         result = _zxcvbn(v)
-        if result["score"] < 2:
+        if result["score"] < 3:
             feedback = result.get("feedback", {})
             warning = feedback.get("warning", "")
             suggestions = feedback.get("suggestions", [])
-            msg = "Password is too weak."
+            msg = "Password is too weak (must score 3/4 on strength meter)."
             if warning:
                 msg += f" {warning}."
             if suggestions:

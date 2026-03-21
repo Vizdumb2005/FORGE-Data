@@ -108,7 +108,7 @@ async def registered_user(client: AsyncClient) -> dict:
         "/api/v1/auth/register",
         json={
             "email": "testuser@example.com",
-            "password": "SecurePass1",
+            "password": "SecurePass12",
             "full_name": "Test User",
         },
     )
@@ -123,7 +123,7 @@ async def auth_headers(client: AsyncClient, registered_user: dict) -> dict:
         "/api/v1/auth/token",
         data={
             "username": "testuser@example.com",
-            "password": "SecurePass1",
+            "password": "SecurePass12",
         },
     )
     assert resp.status_code == 200, resp.text

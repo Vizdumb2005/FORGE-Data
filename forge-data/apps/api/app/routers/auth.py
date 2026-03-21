@@ -60,7 +60,7 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
         value=token,
         httponly=True,
         secure=settings.is_production,
-        samesite="lax",
+        samesite="strict",
         path=_COOKIE_PATH,
         max_age=_COOKIE_MAX_AGE,
     )
@@ -71,7 +71,7 @@ def _clear_refresh_cookie(response: Response) -> None:
         key=_COOKIE_NAME,
         httponly=True,
         secure=settings.is_production,
-        samesite="lax",
+        samesite="strict",
         path=_COOKIE_PATH,
     )
 
@@ -201,8 +201,8 @@ async def refresh(
 ) -> RefreshResponse:
     cookie_token = request.cookies.get(_COOKIE_NAME)
 
-    # Also accept body-based refresh for backward compat
-    if not cookie_token:
+    # Body-based fallback only in non-production (test/dev backward compat)
+    if not cookie_token and settings.app_env not in ("production", "staging"):
         try:
             body = await request.json()
             cookie_token = body.get("refresh_token")
@@ -212,26 +212,25 @@ async def refresh(
     if not cookie_token:
         raise InvalidCredentialsException()
 
-    # Validate the token is actually a refresh token before proceeding
     pre_payload = verify_token(cookie_token)
     if pre_payload is None or pre_payload.get("type") != "refresh":
         raise InvalidCredentialsException()
 
-    # Try Redis-backed rotation first; fall back to legacy for tests without Redis
     try:
         refresh_resp, new_refresh = await auth_service.refresh_from_cookie(db, cookie_token)
         _set_refresh_cookie(response, new_refresh)
         return RefreshResponse(
             access_token=refresh_resp.access_token,
-            refresh_token=new_refresh,
+            refresh_token=None,  # never expose refresh token in body
         )
-    except Exception:
-        # Legacy path: body-based refresh without Redis (existing test compat)
-        tokens = await auth_service.refresh_tokens(db, cookie_token)
-        return RefreshResponse(
-            access_token=tokens.access_token,
-            refresh_token=tokens.refresh_token,
-        )
+    except Exception as exc:
+        if settings.app_env not in ("production", "staging"):
+            tokens = await auth_service.refresh_tokens(db, cookie_token)
+            return RefreshResponse(
+                access_token=tokens.access_token,
+                refresh_token=None,
+            )
+        raise InvalidCredentialsException() from exc
 
 
 # =============================================================================

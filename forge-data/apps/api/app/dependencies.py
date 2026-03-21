@@ -74,9 +74,20 @@ async def get_current_user(
                 raise credentials_exc
         except ImportError:
             pass  # gracefully degrade if Redis is unavailable in tests
+        except HTTPException:
+            raise  # re-raise credentials_exc from blacklist check
         except Exception as exc:
-            # If Redis is down, log and allow (fail open to avoid locking all users out)
-            logger.warning("Redis blacklist check failed: %s", exc)
+            from app.config import settings as _s
+            if _s.is_production:
+                # Fail closed in production: Redis down = deny access
+                # This prevents revoked tokens from being reused during outages.
+                logger.error("Redis blacklist check failed (failing closed): %s", exc)
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Authentication service temporarily unavailable",
+                ) from exc
+            # In dev/test: fail open with a warning
+            logger.warning("Redis blacklist check failed (dev/test, failing open): %s", exc)
 
     user = await db.get(User, user_id)
     if user is None:

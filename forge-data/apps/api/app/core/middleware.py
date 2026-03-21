@@ -18,14 +18,26 @@ _MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _SKIP_AUDIT_PATHS = frozenset({"/api/health", "/api/v1/health", "/api/docs", "/api/redoc"})
 
 
+# Trusted proxy CIDR — requests from these IPs may set X-Forwarded-For.
+# Nginx runs in the same Docker network (172.16.0.0/12 covers default bridge ranges).
+_TRUSTED_PROXY_NETS = (
+    "127.0.0.1",
+    "::1",
+    "172.",  # Docker bridge networks
+    "10.",   # Private class-A
+)
+
+
 def _get_client_ip(request: Request) -> str:
-    """Extract client IP from X-Forwarded-For or fall back to direct connection."""
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return "unknown"
+    """Extract client IP, only trusting X-Forwarded-For from known proxy addresses."""
+    direct_ip = request.client.host if request.client else ""
+    is_trusted_proxy = any(direct_ip.startswith(p) for p in _TRUSTED_PROXY_NETS)
+    if is_trusted_proxy:
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            # Take the leftmost (client) IP from the chain
+            return forwarded_for.split(",")[0].strip()
+    return direct_ip or "unknown"
 
 
 def _extract_user_id(request: Request) -> str | None:

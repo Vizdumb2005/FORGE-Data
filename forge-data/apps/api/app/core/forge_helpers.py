@@ -84,9 +84,14 @@ def build_bootstrap_code(
     auth_token: str,
     workspace_id: str,
 ) -> str:
-    """Return the bootstrap source with runtime values substituted in."""
+    """Return the bootstrap source with runtime values substituted in.
+
+    Values are embedded using repr() to ensure correct Python string escaping
+    regardless of special characters in the token or workspace ID.
+    """
     return (
-        BOOTSTRAP_CODE.replace("__FORGE_API_BASE__", api_base)
-        .replace("__FORGE_AUTH_TOKEN__", auth_token)
-        .replace("__FORGE_WORKSPACE_ID__", workspace_id)
+        BOOTSTRAP_CODE
+        .replace("\"__FORGE_API_BASE__\"", repr(api_base))
+        .replace("\"__FORGE_AUTH_TOKEN__\"", repr(auth_token))
+        .replace("\"__FORGE_WORKSPACE_ID__\"", repr(workspace_id))
     )

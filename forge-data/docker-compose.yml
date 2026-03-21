@@ -35,6 +35,11 @@ services:
       - ./apps/api:/app
     env_file:
       - .env
+    extra_hosts:
+      # Allows the container to reach services running on the host machine
+      # (e.g. Ollama, llama.cpp). Works automatically on Docker Desktop;
+      # this entry makes it work on Linux too.
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,28 +55,35 @@ services:
     build:
       context: ./infra/docker
       dockerfile: Dockerfile.jupyter
-    ports:
-      - "8888:8888"
+    # Port NOT exposed to host — only reachable via nginx /jupyter/ (auth-gated)
     environment:
-      - JUPYTER_TOKEN=
-      - KG_AUTH_TOKEN=
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN:?JUPYTER_TOKEN must be set in .env}
+      - KG_AUTH_TOKEN=${JUPYTER_TOKEN}
       - KG_LIST_KERNELS=True
-      - JUPYTER_SERVER_ALLOW_UNAUTHENTICATED_ACCESS=true
+      - JUPYTER_SERVER_ALLOW_UNAUTHENTICATED_ACCESS=false
     volumes:
       - ./notebooks:/home/jovyan/work
     networks:
       - forge-net
+    # Resource limits — prevent runaway kernel code from exhausting the host
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.25"
+          memory: 512M
     restart: unless-stopped
 
   # ── MLflow Tracking Server ────────────────────────────────────────────────
   mlflow:
     image: ghcr.io/mlflow/mlflow:latest
-    ports:
-      - "5000:5000"
+    # Port NOT exposed to host — accessible only within forge-net
     volumes:
       - ./mlflow-artifacts:/mlflow/artifacts
-    environment:
-      - MLFLOW_TRACKING_URI=postgresql://forge:forge@postgres/forge_mlflow
+    env_file:
+      - .env
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,26 +93,25 @@ services:
       mlflow server
       --host 0.0.0.0
       --port 5000
-      --backend-store-uri postgresql://forge:forge@postgres/forge_mlflow
+      --backend-store-uri ${MLFLOW_BACKEND_STORE_URI}
       --default-artifact-root /mlflow/artifacts
     restart: unless-stopped
 
   # ── PostgreSQL ────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
-    ports:
-      - "5432:5432"
+    # Port NOT exposed to host — accessible only within forge-net
     environment:
-      - POSTGRES_DB=forge
-      - POSTGRES_USER=forge
-      - POSTGRES_PASSWORD=forge
+      - POSTGRES_DB=${POSTGRES_DB:-forge}
+      - POSTGRES_USER=${POSTGRES_USER:-forge}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infra/docker/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - forge-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U forge -d forge"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-forge} -d ${POSTGRES_DB:-forge}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -109,8 +120,7 @@ services:
   # ── Redis ─────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Port NOT exposed to host — accessible only within forge-net
     volumes:
       - redisdata:/data
     networks:
@@ -125,12 +135,10 @@ services:
   # ── MinIO Object Storage ──────────────────────────────────────────────────
   minio:
     image: minio/minio:latest
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+    # Ports NOT exposed to host — accessible only within forge-net
     environment:
-      - MINIO_ROOT_USER=forge
-      - MINIO_ROOT_PASSWORD=forgedata123
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-forge}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:?MINIO_SECRET_KEY must be set in .env}
     volumes:
       - miniodata:/data
     networks:
@@ -150,6 +158,9 @@ services:
       - "80:80"
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Mount htpasswd file for Jupyter Basic Auth
+      # Generate with: htpasswd -c ./infra/nginx/.htpasswd <username>
+      - ./infra/nginx/.htpasswd:/etc/nginx/.htpasswd:ro
     depends_on:
       - web
       - api

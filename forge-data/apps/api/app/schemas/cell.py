@@ -14,16 +14,16 @@ class CellCreate(BaseModel):
     content: str = ""
     position_x: int = Field(default=0, ge=0)
     position_y: int = Field(default=0, ge=0)
-    width: int = Field(default=6, ge=1, le=24)
-    height: int = Field(default=4, ge=1, le=50)
+    width: int = Field(default=800, ge=1, le=5000)
+    height: int = Field(default=300, ge=1, le=5000)
 
 
 class CellUpdate(BaseModel):
     content: str | None = None
     position_x: int | None = Field(default=None, ge=0)
     position_y: int | None = Field(default=None, ge=0)
-    width: int | None = Field(default=None, ge=1, le=24)
-    height: int | None = Field(default=None, ge=1, le=50)
+    width: int | None = Field(default=None, ge=1, le=5000)
+    height: int | None = Field(default=None, ge=1, le=5000)
     language: CellLanguage | None = None
     cell_type: CellType | None = None
 

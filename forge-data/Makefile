@@ -1,5 +1,5 @@
 .PHONY: dev dev-down db-migrate db-reset test-api test-web logs shell-api lint \
-        build clean minio-init help
+        build clean minio-init setup-fast help
 
 # ── Variables ─────────────────────────────────────────────────────────────────
 COMPOSE        := docker compose
@@ -14,6 +14,15 @@ help: ## Show this help message
 # ── Development ───────────────────────────────────────────────────────────────
 dev: ## Start the full local dev stack (builds images first)
 	$(COMPOSE) up --build
+
+setup-fast: ## One-command first-time setup (target: <15 minutes)
+	@if [ ! -f .env ]; then cp .env.example .env; fi
+	$(COMPOSE) up --build -d
+	$(COMPOSE) exec api alembic -c /app/alembic.ini upgrade head
+	docker run --rm --network forge-data_forge-net \
+		-e MC_HOST_forge=http://forge:forgedata123@minio:9000 \
+		minio/mc mb --ignore-existing forge/forge-data
+	@echo "FORGE is ready: http://localhost"
 
 dev-detach: ## Start the stack in detached mode
 	$(COMPOSE) up --build -d

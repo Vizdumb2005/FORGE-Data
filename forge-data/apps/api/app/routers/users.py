@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from app.core.llm_provider import ProviderRegistry
-from app.core.security import decrypt_field, encrypt_field
+from app.core.security import encrypt_field
 from app.dependencies import CurrentUser, DBSession
 from app.schemas.user import UserRead, UserUpdate, UserUpdateLLMKeys
 
@@ -61,29 +61,3 @@ async def update_llm_keys(
         current_user.preferred_llm_provider = selected
 
     return UserRead.from_orm_with_flags(current_user)
-
-
-@router.get(
-    "/me/llm-keys/openai",
-    summary="Retrieve (decrypted) OpenAI key for in-browser use",
-    response_model=dict,
-)
-async def get_openai_key(current_user: CurrentUser) -> dict:
-    """
-    Returns the decrypted key so the browser can use it directly with OpenAI.
-    Only the owner can retrieve their own key.
-    """
-    if not current_user.openai_api_key:
-        return {"key": None}
-    return {"key": decrypt_field(current_user.openai_api_key)}
-
-
-@router.get(
-    "/me/llm-keys/anthropic",
-    summary="Retrieve (decrypted) Anthropic key for in-browser use",
-    response_model=dict,
-)
-async def get_anthropic_key(current_user: CurrentUser) -> dict:
-    if not current_user.anthropic_api_key:
-        return {"key": None}
-    return {"key": decrypt_field(current_user.anthropic_api_key)}

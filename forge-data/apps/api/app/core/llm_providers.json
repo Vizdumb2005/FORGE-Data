@@ -4,16 +4,17 @@
     "ollama": {
       "display_name": "Ollama",
       "protocol": "ollama",
-      "default_model": "llama3.1",
-      "models": ["llama3.1", "codellama", "mistral"],
+      "default_model": "qwen8b-optimized:latest",
+      "models": ["qwen8b-optimized:latest", "qwen3:8b", "qwen14b-optimized:latest", "qwen3:14b"],
       "local": true,
       "priority": 1,
       "base_url_env": "OLLAMA_BASE_URL",
+      "base_url": null,
       "requires_api_key": false,
-      "required_settings": ["base_url"],
+      "required_settings": [],
       "runtime_options": {
-        "num_ctx": 8192,
-        "temperature": 0.2
+        "num_ctx": 4096,
+        "temperature": 0.7
       }
     },
     "llama_cpp": {
@@ -24,9 +25,9 @@
       "local": true,
       "priority": 2,
       "base_url_env": "LLAMA_CPP_BASE_URL",
-      "base_url": "http://localhost:8080/v1",
+      "base_url": null,
       "requires_api_key": false,
-      "required_settings": ["base_url", "model_path"],
+      "required_settings": ["base_url"],
       "runtime_options": {
         "temperature": 0.2
       }
@@ -39,9 +40,9 @@
       "local": true,
       "priority": 3,
       "base_url_env": "GPT4ALL_BASE_URL",
-      "base_url": "http://localhost:4891/v1",
+      "base_url": null,
       "requires_api_key": false,
-      "required_settings": ["base_url", "model_path"],
+      "required_settings": ["base_url"],
       "runtime_options": {
         "temperature": 0.2
       }
@@ -58,7 +59,7 @@
       "local": true,
       "priority": 4,
       "base_url_env": "VLLM_BASE_URL",
-      "base_url": "http://localhost:8001/v1",
+      "base_url": null,
       "requires_api_key": false,
       "required_settings": ["base_url"],
       "runtime_options": {

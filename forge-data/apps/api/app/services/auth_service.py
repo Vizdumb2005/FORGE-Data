@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.exceptions import EmailAlreadyExistsException, InvalidCredentialsException
+from app.core.llm_provider import ProviderRegistry
 from app.core.redis import (
     ACCESS_BLACKLIST_PREFIX,
     REFRESH_TOKEN_PREFIX,
@@ -18,7 +19,6 @@ from app.core.redis import (
 from app.core.security import (
     create_access_token,
     create_refresh_token,
-    decrypt_field,
     get_password_hash,
     hash_token,
     verify_password,
@@ -29,9 +29,11 @@ from app.schemas.user import AuthResponse, RefreshResponse, Token, UserCreate, U
 
 logger = logging.getLogger(__name__)
 
+_provider_registry = ProviderRegistry()
+
 # ── Cookie constants ──────────────────────────────────────────────────────────
 
-REFRESH_COOKIE_NAME = "forge_refresh_token"
+REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_PATH = "/api/v1/auth"
 
 
@@ -236,43 +238,72 @@ async def revoke_all_user_tokens(user_id: str) -> None:
 
 
 async def test_api_key(user: User, provider: str) -> dict[str, Any]:
-    """Make a minimal API call to validate the stored key for *provider*.
-
-    Returns {"valid": True/False, "error": "..."}.
+    """Validate connectivity for *provider* using the same resolution logic as
+    inference — so test results always match real behaviour.
     """
-    provider = provider.lower()
-    if provider == "openai":
-        return await _test_openai_key(user)
-    if provider == "anthropic":
-        return await _test_anthropic_key(user)
-    if provider == "ollama":
-        return await _test_ollama_connection(user)
-    if provider == "llama_cpp":
-        return await _test_openai_compatible_local(user, "llama_cpp")
-    if provider == "gpt4all":
-        return await _test_openai_compatible_local(user, "gpt4all")
-    if provider == "vllm":
-        return await _test_openai_compatible_local(user, "vllm")
-    if provider == "gemini":
-        return await _test_gemini_key(user)
-    return {
-        "valid": False,
-        "error": (
-            f"Provider '{provider}' is not supported in key-test yet. "
-            "If this is a new provider, add a test handler in auth_service."
-        ),
-    }
+    provider_id = provider.lower()
+    try:
+        spec = _provider_registry.get(provider_id)
+    except Exception:
+        return {"valid": False, "error": f"Unknown provider '{provider_id}'."}
+
+    base_url = _provider_registry.resolve_base_url(user, spec)
+    api_key = _provider_registry.resolve_api_key(user, spec)
+
+    if spec.protocol == "ollama":
+        return await _test_http_health(base_url, "/api/tags", spec.display_name)
+
+    if spec.protocol == "openai_compatible" and spec.local:
+        return await _test_http_health(base_url, "/models", spec.display_name)
+
+    if spec.protocol == "openai":
+        return await _test_openai(api_key)
+
+    if spec.protocol == "anthropic":
+        return await _test_anthropic(api_key)
+
+    if spec.protocol == "openai_compatible" and not spec.local:
+        # Cloud openai-compatible (e.g. Gemini uses a key query param)
+        if provider_id == "gemini":
+            return await _test_gemini(api_key)
+        if not api_key:
+            return {"valid": False, "error": f"No API key configured for {spec.display_name}."}
+        url = f"{(base_url or '').rstrip('/')}/models"
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url, headers={"Authorization": f"Bearer {api_key}"})
+            return {"valid": resp.status_code == 200, "error": None if resp.status_code == 200 else f"HTTP {resp.status_code}"}
+        except Exception as exc:
+            return {"valid": False, "error": str(exc)}
+
+    return {"valid": False, "error": f"No test handler for protocol '{spec.protocol}'."}
 
 
-async def _test_openai_key(user: User) -> dict[str, Any]:
-    raw_key = _resolve_key(user.openai_api_key, settings.openai_api_key)
-    if not raw_key:
-        return {"valid": False, "error": "No OpenAI API key configured"}
+async def _test_http_health(base_url: str | None, path: str, display_name: str) -> dict[str, Any]:
+    """GET {base_url}{path} — used for local providers that expose a health/models endpoint."""
+    if not base_url:
+        return {
+            "valid": False,
+            "error": f"{display_name} base URL is not configured. Set it via environment variable or in Settings > AI Configuration.",
+        }
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(base_url.rstrip("/") + path)
+        if resp.status_code == 200:
+            return {"valid": True, "error": None}
+        return {"valid": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+    except Exception as exc:
+        return {"valid": False, "error": str(exc)}
+
+
+async def _test_openai(api_key: str | None) -> dict[str, Any]:
+    if not api_key:
+        return {"valid": False, "error": "No OpenAI API key configured."}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 "https://api.openai.com/v1/models",
-                headers={"Authorization": f"Bearer {raw_key}"},
+                headers={"Authorization": f"Bearer {api_key}"},
             )
         if resp.status_code == 200:
             return {"valid": True, "error": None}
@@ -281,104 +312,40 @@ async def _test_openai_key(user: User) -> dict[str, Any]:
         return {"valid": False, "error": str(exc)}
 
 
-async def _test_anthropic_key(user: User) -> dict[str, Any]:
-    raw_key = _resolve_key(user.anthropic_api_key, settings.anthropic_api_key)
-    if not raw_key:
-        return {"valid": False, "error": "No Anthropic API key configured"}
+async def _test_anthropic(api_key: str | None) -> dict[str, Any]:
+    if not api_key:
+        return {"valid": False, "error": "No Anthropic API key configured."}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={
-                    "x-api-key": raw_key,
+                    "x-api-key": api_key,
                     "anthropic-version": "2023-06-01",
                     "content-type": "application/json",
                 },
-                json={
-                    "model": "claude-3-haiku-20240307",
-                    "max_tokens": 1,
-                    "messages": [{"role": "user", "content": "hi"}],
-                },
+                json={"model": "claude-3-haiku-20240307", "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]},
             )
-        # 200 = works; 401 = bad key; other errors are non-auth issues
         if resp.status_code in (200, 400):
             return {"valid": True, "error": None}
         if resp.status_code == 401:
-            return {"valid": False, "error": "Invalid API key"}
+            return {"valid": False, "error": "Invalid API key."}
         return {"valid": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
     except Exception as exc:
         return {"valid": False, "error": str(exc)}
 
 
-async def _test_gemini_key(user: User) -> dict[str, Any]:
-    provider_keys = user.llm_api_keys or {}
-    encrypted = provider_keys.get("gemini") if isinstance(provider_keys, dict) else None
-    raw_key = _resolve_key(encrypted, settings.google_ai_api_key)
-    if not raw_key:
-        return {
-            "valid": False,
-            "error": "Gemini is not configured. Add your Gemini API key in Settings > AI API Keys.",
-        }
+async def _test_gemini(api_key: str | None) -> dict[str, Any]:
+    if not api_key:
+        return {"valid": False, "error": "No Gemini API key configured."}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 "https://generativelanguage.googleapis.com/v1beta/models",
-                params={"key": raw_key},
+                params={"key": api_key},
             )
         if resp.status_code == 200:
             return {"valid": True, "error": None}
         return {"valid": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
     except Exception as exc:
         return {"valid": False, "error": str(exc)}
-
-
-async def _test_ollama_connection(user: User) -> dict[str, Any]:
-    provider_settings = user.llm_provider_config or {}
-    ollama_config = provider_settings.get("ollama", {}) if isinstance(provider_settings, dict) else {}
-    url = ollama_config.get("base_url") or user.ollama_base_url or settings.ollama_base_url
-    if not url:
-        return {
-            "valid": False,
-            "error": "Ollama is not configured. Add a local endpoint URL in Settings > AI API Keys.",
-        }
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"{url.rstrip('/')}/api/tags")
-        if resp.status_code == 200:
-            return {"valid": True, "error": None}
-        return {"valid": False, "error": f"HTTP {resp.status_code}"}
-    except Exception as exc:
-        return {"valid": False, "error": str(exc)}
-
-
-async def _test_openai_compatible_local(user: User, provider: str) -> dict[str, Any]:
-    provider_settings = user.llm_provider_config or {}
-    provider_config = provider_settings.get(provider, {}) if isinstance(provider_settings, dict) else {}
-    base_url = provider_config.get("base_url")
-    if not base_url:
-        return {
-            "valid": False,
-            "error": (
-                f"{provider} is not configured. Set base_url in Settings > AI API Keys "
-                "under provider settings."
-            ),
-        }
-    url = str(base_url).rstrip("/")
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"{url}/models")
-        if resp.status_code == 200:
-            return {"valid": True, "error": None}
-        return {"valid": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
-    except Exception as exc:
-        return {"valid": False, "error": str(exc)}
-
-
-def _resolve_key(encrypted_user_key: str | None, platform_key: str) -> str | None:
-    """Prefer user's encrypted BYOK key; fall back to platform env key."""
-    if encrypted_user_key:
-        try:
-            return decrypt_field(encrypted_user_key)
-        except Exception:
-            return None
-    return platform_key or None

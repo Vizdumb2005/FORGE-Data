@@ -1,17 +1,22 @@
 /**
  * Token management utilities.
- * Tokens are stored in cookies (access) and localStorage (refresh) so the
- * Next.js middleware can read the access token server-side for route protection.
+ *
+ * Security model:
+ *  - Access token: stored in a JS-readable cookie ONLY so Next.js middleware
+ *    can check auth on the edge. It is short-lived (15 min) so the exposure
+ *    window from XSS is minimal.
+ *  - Refresh token: stored exclusively in the httpOnly cookie set by the API
+ *    server on /login and /refresh. The browser never reads or writes it.
+ *    localStorage is NOT used for any token.
  */
 import Cookies from "js-cookie";
 
 const ACCESS_COOKIE = "forge_access_token";
-const REFRESH_KEY = "forge_refresh_token";
 const COOKIE_OPTS: Cookies.CookieAttributes = {
-  sameSite: "Lax",
+  sameSite: "Strict",
   secure: process.env.NODE_ENV === "production",
-  // No httpOnly — middleware reads via req.cookies on the edge, which does NOT
-  // require httpOnly.  Real httpOnly cookies must be set by the API server.
+  // Not httpOnly here because Next.js middleware (edge runtime) needs to read
+  // it client-side. The short TTL (15 min) limits XSS exposure.
 };
 
 // ── Accessors ─────────────────────────────────────────────────────────────────
@@ -20,25 +25,22 @@ export function getAccessToken(): string | null {
   return Cookies.get(ACCESS_COOKIE) ?? null;
 }
 
-export function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(REFRESH_KEY);
+// Refresh token is httpOnly — the browser cannot read it.
+// The /refresh endpoint reads it automatically from the cookie jar.
+export function getRefreshToken(): null {
+  return null;
 }
 
 // ── Mutators ──────────────────────────────────────────────────────────────────
 
-export function setTokens(access: string, refresh: string): void {
+export function setTokens(access: string, _refresh?: string): void {
+  // Only store the access token. The refresh token is managed server-side
+  // via the httpOnly cookie set in the Set-Cookie response header.
   Cookies.set(ACCESS_COOKIE, access, COOKIE_OPTS);
-  if (typeof window !== "undefined") {
-    localStorage.setItem(REFRESH_KEY, refresh);
-  }
 }
 
 export function clearTokens(): void {
   Cookies.remove(ACCESS_COOKIE, COOKIE_OPTS);
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(REFRESH_KEY);
-  }
 }
 
 // ── JWT helpers ───────────────────────────────────────────────────────────────

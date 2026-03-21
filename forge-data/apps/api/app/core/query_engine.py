@@ -168,11 +168,14 @@ class FederatedQueryEngine:
         self, conn: duckdb.DuckDBPyConnection, name: str, config: dict[str, Any]
     ) -> None:
         file_path = config["file_path"]
+        # Validate path contains no SQL-special characters before interpolation
+        if not re.match(r"^[\w/\\:. -]+$", file_path):
+            raise ValueError(f"Unsafe file path: {file_path!r}")
 
         def _do() -> None:
             conn.execute(
-                f'CREATE OR REPLACE TABLE "{name}" AS '
-                f"SELECT * FROM read_csv_auto('{file_path}')"
+                f'CREATE OR REPLACE TABLE "{name}" AS SELECT * FROM read_csv_auto(?)',
+                [file_path],
             )
 
         await asyncio.to_thread(_do)
@@ -181,10 +184,13 @@ class FederatedQueryEngine:
         self, conn: duckdb.DuckDBPyConnection, name: str, config: dict[str, Any]
     ) -> None:
         file_path = config["file_path"]
+        if not re.match(r"^[\w/\\:. -]+$", file_path):
+            raise ValueError(f"Unsafe file path: {file_path!r}")
 
         def _do() -> None:
             conn.execute(
-                f'CREATE OR REPLACE TABLE "{name}" AS ' f"SELECT * FROM read_parquet('{file_path}')"
+                f'CREATE OR REPLACE TABLE "{name}" AS SELECT * FROM read_parquet(?)',
+                [file_path],
             )
 
         await asyncio.to_thread(_do)
@@ -192,14 +198,18 @@ class FederatedQueryEngine:
     async def _register_postgres(
         self, conn: duckdb.DuckDBPyConnection, name: str, config: dict[str, Any]
     ) -> None:
-        host = config.get("host", "localhost")
+        host = config.get("host", "")
         port = config.get("port", 5432)
         database = config.get("database", "")
         username = config.get("username", "")
         password = config.get("password", "")
         schema_name = config.get("schema_name", "public")
+        # Escape single quotes in credential values to prevent connection string injection
+        def _esc(v: str) -> str:
+            return str(v).replace("'", "''")
         conn_str = (
-            f"host={host} port={port} dbname={database} " f"user={username} password={password}"
+            f"host={_esc(host)} port={int(port)} dbname={_esc(database)} "
+            f"user={_esc(username)} password={_esc(password)}"
         )
 
         def _do() -> None:
@@ -207,7 +217,7 @@ class FederatedQueryEngine:
             with contextlib.suppress(Exception):
                 conn.execute(f'DETACH IF EXISTS "{name}"')
             conn.execute(
-                f"ATTACH '{conn_str}' AS \"{name}\" " f"(TYPE postgres, SCHEMA '{schema_name}')"
+                f"ATTACH '{conn_str}' AS \"{name}\" (TYPE postgres, SCHEMA '{_esc(schema_name)}')"
             )
 
         await asyncio.to_thread(_do)
@@ -215,13 +225,16 @@ class FederatedQueryEngine:
     async def _register_mysql(
         self, conn: duckdb.DuckDBPyConnection, name: str, config: dict[str, Any]
     ) -> None:
-        host = config.get("host", "localhost")
+        host = config.get("host", "")
         port = config.get("port", 3306)
         database = config.get("database", "")
         username = config.get("username", "")
         password = config.get("password", "")
+        def _esc(v: str) -> str:
+            return str(v).replace("'", "''")
         conn_str = (
-            f"host={host} port={port} database={database} " f"user={username} password={password}"
+            f"host={_esc(host)} port={int(port)} database={_esc(database)} "
+            f"user={_esc(username)} password={_esc(password)}"
         )
 
         def _do() -> None:
@@ -242,6 +255,15 @@ class FederatedQueryEngine:
         secret_key = aws_config.get("aws_secret_key", "")
         endpoint = aws_config.get("endpoint", "")
 
+        # Validate credential characters to prevent SET statement injection
+        _cred_re = re.compile(r"^[A-Za-z0-9+/=_\-]*$")
+        if not _cred_re.match(access_key):
+            raise ValueError("Invalid S3 access key format")
+        if not _cred_re.match(secret_key):
+            raise ValueError("Invalid S3 secret key format")
+        if not re.match(r"^[a-z0-9-]*$", region):
+            raise ValueError("Invalid S3 region format")
+
         def _do() -> None:
             conn.execute(f"SET s3_region='{region}';")
             conn.execute(f"SET s3_access_key_id='{access_key}';")
@@ -251,7 +273,8 @@ class FederatedQueryEngine:
                 conn.execute("SET s3_url_style='path';")
                 conn.execute("SET s3_use_ssl=false;")
             conn.execute(
-                f'CREATE OR REPLACE TABLE "{name}" AS ' f"SELECT * FROM read_parquet('{s3_path}')"
+                f'CREATE OR REPLACE TABLE "{name}" AS SELECT * FROM read_parquet(?)',
+                [s3_path],
             )
 
         await asyncio.to_thread(_do)
@@ -271,6 +294,9 @@ class FederatedQueryEngine:
         database = config.get("database", "")
         schema_name = config.get("schema_name", "PUBLIC")
         table = config.get("table", "")
+        # Validate table is a safe SQL identifier before interpolation
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_.]*$", table):
+            raise ValueError(f"Invalid Snowflake table identifier: {table!r}")
 
         def _do() -> None:
             import snowflake.connector
@@ -285,8 +311,7 @@ class FederatedQueryEngine:
             )
             try:
                 cursor = sf_conn.cursor()
-                cursor.execute(f"SELECT * FROM {table}")
-                # Fetch into DuckDB via Arrow if available, else via pandas
+                cursor.execute("SELECT * FROM IDENTIFIER(%s)", (table,))
                 try:
                     arrow_table = cursor.fetch_arrow_all()  # noqa: F841
                     conn.execute(
