@@ -131,6 +131,15 @@ export default function Canvas({ workspaceId, onRunCell, onDeleteCell, onContent
 
   // ── Minimap ──────────────────────────────────────────────────────────────
 
+  const [showMinimap, setShowMinimap] = useState(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleScroll = () => {
+    setShowMinimap(true);
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => setShowMinimap(false), 2000);
+  };
+
   const cellPositions = useMemo(() => {
     return cellOrder.map((id) => {
       const cs = cellStates[id];
@@ -146,6 +155,7 @@ export default function Canvas({ workspaceId, onRunCell, onDeleteCell, onContent
         ref={scrollRef}
         className="h-full w-full overflow-auto"
         onWheel={handleWheel}
+        onScroll={handleScroll}
         onClick={handleBackgroundClick}
       >
         {/* Grid pattern background */}
@@ -279,7 +289,7 @@ export default function Canvas({ workspaceId, onRunCell, onDeleteCell, onContent
       </div>
 
       {/* ── Minimap ──────────────────────────────────────────────────── */}
-      <Minimap cells={cellPositions} activeCellId={activeCellId} />
+      <Minimap cells={cellPositions} activeCellId={activeCellId} visible={showMinimap} />
     </div>
   );
 }
@@ -384,8 +394,8 @@ function AddCellDivider({
 
 // ── Minimap ──────────────────────────────────────────────────────────────────
 
-const MINIMAP_W = 180;
-const MINIMAP_H = 120;
+const MINIMAP_W = 120; // Reduced width
+const MINIMAP_H = 80;  // Reduced height
 
 const CELL_TYPE_COLORS: Record<CellType, string> = {
   code: "#22c55e",
@@ -398,9 +408,11 @@ const CELL_TYPE_COLORS: Record<CellType, string> = {
 function Minimap({
   cells,
   activeCellId,
+  visible,
 }: {
   cells: { id: string; y: number; type: CellType }[];
   activeCellId: string | null;
+  visible: boolean;
 }) {
   if (cells.length === 0) return null;
 
@@ -409,7 +421,10 @@ function Minimap({
 
   return (
     <div
-      className="absolute bottom-20 right-6 z-10 rounded-md border border-forge-border bg-forge-surface/90 backdrop-blur-sm"
+      className={cn(
+        "absolute bottom-6 right-24 z-10 rounded-md border border-forge-border bg-forge-surface/90 backdrop-blur-sm transition-opacity duration-300",
+        visible ? "opacity-100" : "opacity-0 pointer-events-none"
+      )}
       style={{ width: MINIMAP_W, height: MINIMAP_H }}
     >
       <div className="relative h-full w-full overflow-hidden rounded-md">
@@ -438,6 +453,7 @@ function Minimap({
 
 const CELL_OPTIONS: { type: CellType; label: string; icon: typeof Code2; language?: CellLanguage }[] = [
   { type: "code", label: "Python", icon: Code2, language: "python" },
+  { type: "code", label: "R", icon: Code2, language: "r" },
   { type: "sql", label: "SQL", icon: Database, language: "sql" },
   { type: "markdown", label: "Markdown", icon: FileText, language: "markdown" },
   { type: "chart", label: "Chart", icon: BarChart2 },

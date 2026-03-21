@@ -47,34 +47,35 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { user, logout } = useAuth();
   const { workspaces } = useWorkspace();
 
-  const sidebarWidth = collapsed ? "w-16" : "w-60";
+  const sidebarWidth = collapsed ? "w-16" : "w-72";
 
   return (
     <TooltipProvider delayDuration={200}>
       <aside
         className={cn(
-          "flex h-full shrink-0 flex-col border-r border-border bg-card transition-all duration-200",    
+          "relative flex h-full shrink-0 flex-col border-r border-border bg-card transition-all duration-200",    
           sidebarWidth
         )}
       >
         {/* Logo */}
         <div className={cn("flex h-14 items-center border-b border-border px-4", collapsed ? "justify-center" : "justify-between")}>
+          <Logo size={collapsed ? "sm" : "md"} className={cn(collapsed && "w-8 overflow-hidden")} />
           {!collapsed && (
-            <Logo size="sm" />
-          )}
-          <button
-            onClick={onToggle}
-            className={cn(
-              "rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors",        
-              !collapsed && "ml-auto"
-            )}
-          >
-            {collapsed ? (
-              <PanelLeft className="h-4 w-4" />
-            ) : (
+            <button
+              onClick={onToggle}
+              className="ml-auto rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
               <PanelLeftClose className="h-4 w-4" />
-            )}
-          </button>
+            </button>
+          )}
+          {collapsed && (
+             <button
+              onClick={onToggle}
+              className="absolute -right-3 top-4 z-20 rounded-full border border-border bg-background p-1 text-muted-foreground shadow-md hover:text-foreground"
+            >
+              <ChevronRight className="h-3 w-3" />
+            </button>
+          )}
         </div>
 
         {/* Main nav */}

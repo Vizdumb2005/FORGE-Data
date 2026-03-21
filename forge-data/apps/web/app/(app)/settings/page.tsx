@@ -8,7 +8,7 @@ export default function SettingsPage() {
   const { user } = useAuth();
 
   return (
-    <div className="container max-w-4xl py-10 space-y-8">
+    <div className="container mx-auto max-w-4xl py-10 space-y-8">
       <div className="flex items-center justify-between space-y-2">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Settings</h2>

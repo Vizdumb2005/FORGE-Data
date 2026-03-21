@@ -7,6 +7,7 @@ import type { CellType } from "@/types";
 
 const CELL_OPTIONS: { type: CellType; label: string; icon: React.ElementType; language?: string }[] = [
   { type: "code", label: "Python cell", icon: Code2, language: "python" },
+  { type: "code", label: "R cell", icon: Code2, language: "r" },
   { type: "sql", label: "SQL cell", icon: Database, language: "sql" },
   { type: "markdown", label: "Markdown", icon: FileText, language: "markdown" },
   { type: "chart", label: "Chart", icon: BarChart2 },

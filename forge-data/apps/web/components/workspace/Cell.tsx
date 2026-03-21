@@ -75,7 +75,7 @@ export default function CellComponent({
   const [outputCollapsed, setOutputCollapsed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const canRun = cell.cell_type === "code" || cell.cell_type === "sql";
+  const canRun = ["code", "sql", "chart", "ai_chat"].includes(cell.cell_type);
   const meta = CELL_TYPE_META[cell.cell_type] ?? CELL_TYPE_META.code;
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -184,6 +184,18 @@ export default function CellComponent({
               content={localContent}
               onChange={(v) => onContentChange(cell.id, v)}
               isActive={isActive}
+            />
+          ) : cell.cell_type === "chart" ? (
+            <ChartCellEditor
+              content={localContent}
+              onChange={(v) => onContentChange(cell.id, v)}
+              onRun={() => onRun(cell.id)}
+            />
+          ) : cell.cell_type === "ai_chat" ? (
+            <AIChatCellEditor
+              content={localContent}
+              onChange={(v) => onContentChange(cell.id, v)}
+              onRun={() => onRun(cell.id)}
             />
           ) : null}
 
@@ -372,6 +384,105 @@ function MarkdownCellEditor({
         >
           Preview (Shift+Enter)
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Chart Cell Editor ────────────────────────────────────────────────────────
+
+function ChartCellEditor({
+  content,
+  onChange,
+  onRun,
+}: {
+  content: string;
+  onChange: (v: string) => void;
+  onRun: () => void;
+}) {
+  const lineCount = Math.max(content.split("\n").length, 4);
+  const height = Math.max(100, Math.min(lineCount * 19 + 16, 400));
+
+  return (
+    <div className="monaco-wrapper">
+      <MonacoEditor
+        height={height}
+        language="json"
+        theme="vs-dark"
+        value={content || "{\n  \"data\": [],\n  \"layout\": {}\n}"}
+        onChange={(v) => onChange(v ?? "")}
+        onMount={(editor) => {
+          editor.addAction({
+            id: "forge-run-cell",
+            label: "Run Cell",
+            keybindings: [2048 + 3],
+            run: () => onRun(),
+          });
+        }}
+        options={{
+          minimap: { enabled: false },
+          fontSize: 13,
+          fontFamily: "'DM Mono', monospace",
+          lineNumbers: "on",
+          folding: true,
+          wordWrap: "off",
+          scrollBeyondLastLine: false,
+          automaticLayout: true,
+          padding: { top: 8, bottom: 8 },
+          renderLineHighlight: "gutter",
+        }}
+      />
+      <div className="border-t border-forge-border px-2 py-1 text-[10px] text-forge-muted">
+        Enter Plotly JSON configuration
+      </div>
+    </div>
+  );
+}
+
+// ── AI Chat Cell Editor ──────────────────────────────────────────────────────
+
+function AIChatCellEditor({
+  content,
+  onChange,
+  onRun,
+}: {
+  content: string;
+  onChange: (v: string) => void;
+  onRun: () => void;
+}) {
+  const lineCount = Math.max(content.split("\n").length, 2);
+  const height = Math.max(80, Math.min(lineCount * 19 + 16, 300));
+
+  return (
+    <div className="monaco-wrapper">
+      <MonacoEditor
+        height={height}
+        language="markdown"
+        theme="vs-dark"
+        value={content}
+        onChange={(v) => onChange(v ?? "")}
+        onMount={(editor) => {
+          editor.addAction({
+            id: "forge-run-cell",
+            label: "Run Cell",
+            keybindings: [2048 + 3],
+            run: () => onRun(),
+          });
+        }}
+        options={{
+          minimap: { enabled: false },
+          fontSize: 13,
+          fontFamily: "'DM Mono', monospace",
+          lineNumbers: "off",
+          wordWrap: "on",
+          scrollBeyondLastLine: false,
+          automaticLayout: true,
+          padding: { top: 8, bottom: 8 },
+          renderLineHighlight: "gutter",
+        }}
+      />
+      <div className="border-t border-forge-border px-2 py-1 text-[10px] text-forge-muted">
+        Enter prompt and run to generate response
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,6 +11,7 @@ import * as zxcvbnCommonPackage from "@zxcvbn-ts/language-common";
 import * as zxcvbnEnPackage from "@zxcvbn-ts/language-en";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useToast } from "@/components/ui/use-toast";
+import { Logo } from "@/components/Logo";
 
 // Initialize zxcvbn
 zxcvbnOptions.setOptions({
@@ -45,7 +46,7 @@ const STRENGTH_COLORS = [
   "bg-green-500",
 ];
 
-export default function RegisterPage() {
+function RegisterForm() {
   const { register: registerUser, loading, clearError } = useAuth();
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
@@ -108,130 +109,152 @@ export default function RegisterPage() {
   const isLoading = submitting || loading;
 
   return (
-    <div className="rounded-xl border border-forge-border bg-forge-surface p-8 shadow-xl">
-      <h1 className="mb-1 font-sans text-xl font-semibold text-foreground">
-        Create account
-      </h1>
-      <p className="mb-6 font-mono text-sm text-forge-muted">
+    <div className="w-full max-w-[400px] animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="mb-8 flex flex-col items-center text-center space-y-2">
+        <Logo size="lg" className="mb-4" />
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          Create account
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Get started with your enterprise workspace
+        </p>
+      </div>
+
+      <div className="grid gap-6 rounded-lg border border-border bg-card p-6 shadow-sm">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {/* Full name */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-muted-foreground">
+              Full name
+            </label>
+            <input
+              type="text"
+              autoComplete="name"
+              disabled={isLoading}
+              {...register("full_name")}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200"
+              placeholder="Ada Lovelace"
+            />
+            {errors.full_name && (
+              <p className="text-xs text-destructive font-medium">
+                {errors.full_name.message}
+              </p>
+            )}
+          </div>
+
+          {/* Email */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-muted-foreground">
+              Email
+            </label>
+            <input
+              type="email"
+              autoComplete="email"
+              disabled={isLoading}
+              {...register("email")}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200"
+              placeholder="name@company.com"
+            />
+            {errors.email && (
+              <p className="text-xs text-destructive font-medium">
+                {errors.email.message}
+              </p>
+            )}
+          </div>
+
+          {/* Password */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-muted-foreground">
+              Password
+            </label>
+            <input
+              type="password"
+              autoComplete="new-password"
+              disabled={isLoading}
+              {...register("password")}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200"
+              placeholder="••••••••"
+            />
+            {errors.password && (
+              <p className="text-xs text-destructive font-medium">
+                {errors.password.message}
+              </p>
+            )}
+
+            {/* Password strength meter */}
+            {strength !== null && (
+              <div className="mt-2 space-y-1">
+                <div className="flex gap-1 h-1">
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <div
+                      key={i}
+                      className={`flex-1 rounded-full transition-colors duration-300 ${
+                        i <= strength.score
+                          ? STRENGTH_COLORS[strength.score]
+                          : "bg-muted"
+                      }`}
+                    />
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground text-right">
+                  {STRENGTH_LABELS[strength.score]}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Confirm password */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-muted-foreground">
+              Confirm password
+            </label>
+            <input
+              type="password"
+              autoComplete="new-password"
+              disabled={isLoading}
+              {...register("confirm")}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200"
+              placeholder="••••••••"
+            />
+            {errors.confirm && (
+              <p className="text-xs text-destructive font-medium">
+                {errors.confirm.message}
+              </p>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="inline-flex w-full items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 mt-4 shadow-sm hover:shadow-md active:scale-[0.98]"
+          >
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isLoading ? "Creating account..." : "Create account"}
+          </button>
+        </form>
+      </div>
+      
+      <p className="px-8 text-center text-sm text-muted-foreground mt-6">
         Already have an account?{" "}
-        <Link href="/login" className="text-forge-accent hover:underline">
+        <Link 
+          href="/login" 
+          className="underline underline-offset-4 hover:text-primary transition-colors"
+        >
           Sign in
         </Link>
       </p>
-
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        {/* Full name */}
-        <div>
-          <label className="mb-1.5 block font-mono text-xs font-medium uppercase tracking-wider text-forge-muted">
-            Full name
-          </label>
-          <input
-            type="text"
-            autoComplete="name"
-            disabled={isLoading}
-            {...register("full_name")}
-            className="w-full rounded-md border border-forge-border bg-forge-bg px-3 py-2.5 font-mono text-sm text-foreground placeholder:text-forge-muted/50 focus:border-forge-accent focus:outline-none focus:ring-1 focus:ring-forge-accent/30 disabled:opacity-50"
-            placeholder="Ada Lovelace"
-          />
-          {errors.full_name && (
-            <p className="mt-1 font-mono text-xs text-red-400">
-              {errors.full_name.message}
-            </p>
-          )}
-        </div>
-
-        {/* Email */}
-        <div>
-          <label className="mb-1.5 block font-mono text-xs font-medium uppercase tracking-wider text-forge-muted">
-            Email
-          </label>
-          <input
-            type="email"
-            autoComplete="email"
-            disabled={isLoading}
-            {...register("email")}
-            className="w-full rounded-md border border-forge-border bg-forge-bg px-3 py-2.5 font-mono text-sm text-foreground placeholder:text-forge-muted/50 focus:border-forge-accent focus:outline-none focus:ring-1 focus:ring-forge-accent/30 disabled:opacity-50"
-            placeholder="you@example.com"
-          />
-          {errors.email && (
-            <p className="mt-1 font-mono text-xs text-red-400">
-              {errors.email.message}
-            </p>
-          )}
-        </div>
-
-        {/* Password */}
-        <div>
-          <label className="mb-1.5 block font-mono text-xs font-medium uppercase tracking-wider text-forge-muted">
-            Password
-          </label>
-          <input
-            type="password"
-            autoComplete="new-password"
-            disabled={isLoading}
-            {...register("password")}
-            className="w-full rounded-md border border-forge-border bg-forge-bg px-3 py-2.5 font-mono text-sm text-foreground placeholder:text-forge-muted/50 focus:border-forge-accent focus:outline-none focus:ring-1 focus:ring-forge-accent/30 disabled:opacity-50"
-            placeholder="••••••••"
-          />
-          {errors.password && (
-            <p className="mt-1 font-mono text-xs text-red-400">
-              {errors.password.message}
-            </p>
-          )}
-
-          {/* Password strength meter */}
-          {strength !== null && (
-            <div className="mt-2">
-              <div className="flex gap-1">
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <div
-                    key={i}
-                    className={`h-1 flex-1 rounded-full transition-colors ${
-                      i <= strength.score
-                        ? STRENGTH_COLORS[strength.score]
-                        : "bg-forge-border"
-                    }`}
-                  />
-                ))}
-              </div>
-              <p className="mt-1 font-mono text-xs text-forge-muted">
-                {STRENGTH_LABELS[strength.score]}
-                {strength.feedback.warning &&
-                  ` — ${strength.feedback.warning}`}
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Confirm password */}
-        <div>
-          <label className="mb-1.5 block font-mono text-xs font-medium uppercase tracking-wider text-forge-muted">
-            Confirm password
-          </label>
-          <input
-            type="password"
-            autoComplete="new-password"
-            disabled={isLoading}
-            {...register("confirm")}
-            className="w-full rounded-md border border-forge-border bg-forge-bg px-3 py-2.5 font-mono text-sm text-foreground placeholder:text-forge-muted/50 focus:border-forge-accent focus:outline-none focus:ring-1 focus:ring-forge-accent/30 disabled:opacity-50"
-            placeholder="••••••••"
-          />
-          {errors.confirm && (
-            <p className="mt-1 font-mono text-xs text-red-400">
-              {errors.confirm.message}
-            </p>
-          )}
-        </div>
-
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="flex w-full items-center justify-center gap-2 rounded-md bg-forge-accent px-4 py-2.5 font-mono text-sm font-semibold text-forge-bg transition-colors hover:bg-forge-accent-dim disabled:opacity-50"
-        >
-          {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-          {isLoading ? "Creating account..." : "Create account"}
-        </button>
-      </form>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense>
+      <div className="container relative min-h-screen flex-col items-center justify-center grid lg:max-w-none lg:grid-cols-1 lg:px-0">
+        <div className="lg:p-8 flex items-center justify-center h-full w-full">
+          <RegisterForm />
+        </div>
+      </div>
+    </Suspense>
   );
 }

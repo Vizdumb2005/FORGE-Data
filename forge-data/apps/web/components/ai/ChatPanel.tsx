@@ -91,6 +91,9 @@ export default function ChatPanel({ workspaceId, width, onClose }: ChatPanelProp
     const sortedProviders = [...providers].sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999));
     const choices: ModelChoice[] = [];
     for (const provider of sortedProviders) {
+      // Only include configured providers or local ones
+      if (!provider.configured && !provider.local) continue;
+
       for (const model of provider.models) {
         choices.push({
           id: `${provider.id}:${model}`,

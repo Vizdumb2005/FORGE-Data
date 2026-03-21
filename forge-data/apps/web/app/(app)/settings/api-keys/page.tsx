@@ -127,7 +127,7 @@ export default function ApiKeysPage() {
   };
 
   return (
-    <div className="container max-w-5xl py-10 space-y-8">
+    <div className="container mx-auto max-w-5xl py-10 space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">AI Configuration</h1>
@@ -163,12 +163,15 @@ export default function ApiKeysPage() {
                   <span className="text-xs text-muted-foreground">JSON</span>
                 </div>
                 <div className="relative">
+                  <label htmlFor="config-json" className="sr-only">Configuration JSON</label>
                   <textarea
+                    id="config-json"
                     value={jsonText}
                     onChange={(e) => setJsonText(e.target.value)}
                     rows={24}
                     spellCheck={false}
                     className="flex w-full bg-slate-950 px-4 py-4 text-xs font-mono text-slate-50 placeholder:text-muted-foreground focus-visible:outline-none resize-none leading-relaxed"
+                    aria-label="Configuration JSON editor"
                   />
                 </div>
              </div>

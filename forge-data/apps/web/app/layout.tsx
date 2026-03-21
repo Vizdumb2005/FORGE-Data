@@ -17,7 +17,12 @@ const dmMono = DM_Mono({
 
 export const metadata: Metadata = {
   title: { default: "FORGE Data", template: "%s | FORGE Data" },
-  description: "Open-source, self-hosted data intelligence platform",
+  description: "Enterprise Data Intelligence Platform",
+  icons: {
+    icon: "/icon.svg?v=2",
+    shortcut: "/favicon.svg?v=2",
+    apple: "/icon.svg?v=2",
+  },
 };
 
 export default function RootLayout({
