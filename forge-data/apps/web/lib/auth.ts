@@ -1,28 +1,16 @@
 /**
- * Token management utilities.
+ * Token helpers.
  *
  * Security model:
- *  - Access token: stored in a JS-readable cookie ONLY so Next.js middleware
- *    can check auth on the edge. It is short-lived (15 min) so the exposure
- *    window from XSS is minimal.
- *  - Refresh token: stored exclusively in the httpOnly cookie set by the API
- *    server on /login and /refresh. The browser never reads or writes it.
- *    localStorage is NOT used for any token.
+ *  - Access token: httpOnly cookie (set by API), never readable in JS.
+ *  - Refresh token: httpOnly cookie (set by API), never readable in JS.
+ *  - Browser auth relies on same-origin cookies with `withCredentials: true`.
  */
-import Cookies from "js-cookie";
-
-const ACCESS_COOKIE = "forge_access_token";
-const COOKIE_OPTS: Cookies.CookieAttributes = {
-  sameSite: "Strict",
-  secure: process.env.NODE_ENV === "production",
-  // Not httpOnly here because Next.js middleware (edge runtime) needs to read
-  // it client-side. The short TTL (15 min) limits XSS exposure.
-};
 
 // ── Accessors ─────────────────────────────────────────────────────────────────
 
 export function getAccessToken(): string | null {
-  return Cookies.get(ACCESS_COOKIE) ?? null;
+  return null;
 }
 
 // Refresh token is httpOnly — the browser cannot read it.
@@ -34,13 +22,11 @@ export function getRefreshToken(): null {
 // ── Mutators ──────────────────────────────────────────────────────────────────
 
 export function setTokens(access: string, _refresh?: string): void {
-  // Only store the access token. The refresh token is managed server-side
-  // via the httpOnly cookie set in the Set-Cookie response header.
-  Cookies.set(ACCESS_COOKIE, access, COOKIE_OPTS);
+  void access;
 }
 
 export function clearTokens(): void {
-  Cookies.remove(ACCESS_COOKIE, COOKIE_OPTS);
+  // Cookies are httpOnly and cleared server-side on /logout.
 }
 
 // ── JWT helpers ───────────────────────────────────────────────────────────────

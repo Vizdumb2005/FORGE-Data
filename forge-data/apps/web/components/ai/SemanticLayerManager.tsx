@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BookMarked, Plus, Trash2 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -32,16 +32,16 @@ export default function SemanticLayerManager({ workspaceId, datasets }: Semantic
 
   const datasetNames = useMemo(() => datasets.map((d) => d.name), [datasets]);
 
-  const loadMetrics = async () => {
+  const loadMetrics = useCallback(async () => {
     const { data } = await api.get<MetricRecord[]>(
       `/api/v1/ai/workspaces/${workspaceId}/semantic-layer/metrics`,
     );
     setMetrics(data);
-  };
+  }, [workspaceId]);
 
   useEffect(() => {
     void loadMetrics();
-  }, [workspaceId]);
+  }, [loadMetrics]);
 
   const createMetric = async () => {
     if (!name.trim() || !definition.trim() || !formulaSql.trim()) return;

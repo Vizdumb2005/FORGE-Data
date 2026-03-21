@@ -35,6 +35,8 @@ _provider_registry = ProviderRegistry()
 
 REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_PATH = "/api/v1/auth"
+ACCESS_COOKIE_NAME = "forge_access_token"
+ACCESS_COOKIE_PATH = "/"
 
 
 # ── User creation ─────────────────────────────────────────────────────────────

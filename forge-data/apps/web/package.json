@@ -53,9 +53,9 @@
     "reactflow": "^11.11.4",
     "socket.io-client": "^4.8.1",
     "tailwind-merge": "^2.5.4",
-    "vega": "^5.30.0",
-    "vega-embed": "^6.26.0",
-    "vega-lite": "^5.21.0",
+    "vega": "^6.2.0",
+    "vega-embed": "^7.1.0",
+    "vega-lite": "^6.4.2",
     "zod": "^3.23.8",
     "zustand": "^5.0.0"
   },

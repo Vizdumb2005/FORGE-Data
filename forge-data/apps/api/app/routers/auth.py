@@ -52,6 +52,9 @@ limiter = Limiter(
 _COOKIE_NAME = auth_service.REFRESH_COOKIE_NAME
 _COOKIE_PATH = auth_service.REFRESH_COOKIE_PATH
 _COOKIE_MAX_AGE = settings.jwt_refresh_token_expire_days * 86400
+_ACCESS_COOKIE_NAME = auth_service.ACCESS_COOKIE_NAME
+_ACCESS_COOKIE_PATH = auth_service.ACCESS_COOKIE_PATH
+_ACCESS_COOKIE_MAX_AGE = settings.jwt_access_token_expire_minutes * 60
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
@@ -66,6 +69,18 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
     )
 
 
+def _set_access_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=_ACCESS_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=settings.is_production,
+        samesite="strict",
+        path=_ACCESS_COOKIE_PATH,
+        max_age=_ACCESS_COOKIE_MAX_AGE,
+    )
+
+
 def _clear_refresh_cookie(response: Response) -> None:
     response.delete_cookie(
         key=_COOKIE_NAME,
@@ -73,6 +88,16 @@ def _clear_refresh_cookie(response: Response) -> None:
         secure=settings.is_production,
         samesite="strict",
         path=_COOKIE_PATH,
+    )
+
+
+def _clear_access_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=_ACCESS_COOKIE_NAME,
+        httponly=True,
+        secure=settings.is_production,
+        samesite="strict",
+        path=_ACCESS_COOKIE_PATH,
     )
 
 
@@ -108,6 +133,7 @@ async def register(
 
     auth_resp = await auth_service.build_auth_response(user)
     _set_refresh_cookie(response, auth_resp.refresh_token)
+    _set_access_cookie(response, auth_resp.access_token)
 
     background_tasks.add_task(_send_verification_email, user.email)
 
@@ -148,6 +174,7 @@ async def login(
     user = await auth_service.authenticate_user(db, payload.email, payload.password)
     auth_resp = await auth_service.build_auth_response(user)
     _set_refresh_cookie(response, auth_resp.refresh_token)
+    _set_access_cookie(response, auth_resp.access_token)
 
     await audit_service.log_event(
         db,
@@ -201,14 +228,6 @@ async def refresh(
 ) -> RefreshResponse:
     cookie_token = request.cookies.get(_COOKIE_NAME)
 
-    # Body-based fallback only in non-production (test/dev backward compat)
-    if not cookie_token and settings.app_env not in ("production", "staging"):
-        try:
-            body = await request.json()
-            cookie_token = body.get("refresh_token")
-        except Exception:
-            pass
-
     if not cookie_token:
         raise InvalidCredentialsException()
 
@@ -219,6 +238,7 @@ async def refresh(
     try:
         refresh_resp, new_refresh = await auth_service.refresh_from_cookie(db, cookie_token)
         _set_refresh_cookie(response, new_refresh)
+        _set_access_cookie(response, refresh_resp.access_token)
         return RefreshResponse(
             access_token=refresh_resp.access_token,
             refresh_token=None,  # never expose refresh token in body
@@ -271,6 +291,7 @@ async def logout(
                 logger.warning("Failed to blacklist access token: %s", exc)
 
     _clear_refresh_cookie(response)
+    _clear_access_cookie(response)
 
     await audit_service.log_event(
         db,

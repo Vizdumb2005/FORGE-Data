@@ -75,10 +75,6 @@ async def run_cell(
         )
 
     # ── Python / R path — stream via Jupyter kernel (SSE) ────────────────
-    # Extract auth token for context injection
-    auth_header = request.headers.get("authorization", "")
-    auth_token = auth_header.replace("Bearer ", "") if auth_header else ""
-
     async def event_generator():
         try:
             # Ensure kernel exists and inject context on first use
@@ -87,11 +83,7 @@ async def run_cell(
             # Inject FORGE helpers if this is the first execution
             if not cell.kernel_id or cell.kernel_id != kernel_id:
                 try:
-                    await kernel_mgr.inject_context(
-                        workspace_id,
-                        current_user.id,
-                        auth_token,
-                    )
+                    await kernel_mgr.inject_context(workspace_id)
                 except Exception as exc:
                     logger.warning("Context injection failed: %s", exc)
 

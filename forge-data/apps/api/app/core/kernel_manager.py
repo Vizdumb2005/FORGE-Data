@@ -140,14 +140,12 @@ class KernelManager:
     async def inject_context(
         self,
         workspace_id: str,
-        user_id: str,
-        auth_token: str,
     ) -> None:
         """Inject the FORGE bootstrap code into the workspace kernel."""
         # Use the internal API URL so the kernel (running inside Docker) calls
         # the API via the Docker network, not via the public-facing URL.
         api_base = settings.internal_api_url.rstrip("/")
-        code = build_bootstrap_code(api_base, auth_token, workspace_id)
+        code = build_bootstrap_code(api_base, workspace_id)
         # Execute silently (don't stream output)
         await self.execute_code(workspace_id, code, on_output=None)
 

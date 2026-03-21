@@ -1,6 +1,7 @@
 """ASGI middleware — request logging and audit trail."""
 
 import asyncio
+import ipaddress
 import logging
 import time
 import uuid
@@ -21,22 +22,43 @@ _SKIP_AUDIT_PATHS = frozenset({"/api/health", "/api/v1/health", "/api/docs", "/a
 # Trusted proxy CIDR — requests from these IPs may set X-Forwarded-For.
 # Nginx runs in the same Docker network (172.16.0.0/12 covers default bridge ranges).
 _TRUSTED_PROXY_NETS = (
-    "127.0.0.1",
-    "::1",
-    "172.",  # Docker bridge networks
-    "10.",   # Private class-A
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
 )
+
+
+def _parse_ip(value: str) -> ipaddress._BaseAddress | None:
+    try:
+        return ipaddress.ip_address(value.strip())
+    except ValueError:
+        return None
 
 
 def _get_client_ip(request: Request) -> str:
     """Extract client IP, only trusting X-Forwarded-For from known proxy addresses."""
     direct_ip = request.client.host if request.client else ""
-    is_trusted_proxy = any(direct_ip.startswith(p) for p in _TRUSTED_PROXY_NETS)
+    direct_addr = _parse_ip(direct_ip)
+    is_trusted_proxy = bool(
+        direct_addr and any(direct_addr in trusted_net for trusted_net in _TRUSTED_PROXY_NETS)
+    )
     if is_trusted_proxy:
         forwarded_for = request.headers.get("X-Forwarded-For")
         if forwarded_for:
-            # Take the leftmost (client) IP from the chain
-            return forwarded_for.split(",")[0].strip()
+            # Take the leftmost syntactically valid public IP from the chain.
+            # If none are valid/public, fall back to direct proxy IP.
+            for candidate in (part.strip() for part in forwarded_for.split(",")):
+                candidate_ip = _parse_ip(candidate)
+                if candidate_ip and not (
+                    candidate_ip.is_private
+                    or candidate_ip.is_loopback
+                    or candidate_ip.is_link_local
+                    or candidate_ip.is_reserved
+                    or candidate_ip.is_multicast
+                ):
+                    return str(candidate_ip)
     return direct_ip or "unknown"
 
 

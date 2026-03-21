@@ -14,7 +14,7 @@ from app.core.security import verify_token
 logger = logging.getLogger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
-oauth2_scheme_required = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
+oauth2_scheme_required = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
 
 
 # ── Database dependency ────────────────────────────────────────────────────────
@@ -43,6 +43,7 @@ def get_app_settings() -> Settings:
 
 async def get_current_user(
     token: Annotated[str | None, Depends(oauth2_scheme_required)],
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Decode the JWT bearer token, check the Redis blacklist, return the authenticated User."""
@@ -54,7 +55,11 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    payload = verify_token(token)
+    access_token = token or request.cookies.get("forge_access_token")
+    if not access_token:
+        raise credentials_exc
+
+    payload = verify_token(access_token)
     if payload is None:
         raise credentials_exc
 
@@ -73,7 +78,11 @@ async def get_current_user(
             if await is_access_token_blacklisted(jti):
                 raise credentials_exc
         except ImportError:
-            pass  # gracefully degrade if Redis is unavailable in tests
+            logger.error("Redis blacklist check module unavailable")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service temporarily unavailable",
+            ) from None
         except HTTPException:
             raise  # re-raise credentials_exc from blacklist check
         except Exception as exc:
@@ -86,8 +95,11 @@ async def get_current_user(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Authentication service temporarily unavailable",
                 ) from exc
-            # In dev/test: fail open with a warning
-            logger.warning("Redis blacklist check failed (dev/test, failing open): %s", exc)
+            logger.error("Redis blacklist check failed: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service temporarily unavailable",
+            ) from exc
 
     user = await db.get(User, user_id)
     if user is None:
@@ -108,15 +120,17 @@ async def get_current_active_user(current_user=Depends(get_current_user)):
 
 async def get_optional_user(
     token: Annotated[str | None, Depends(oauth2_scheme)],
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Like get_current_user but returns None when no token is present (public endpoints)."""
-    if not token:
+    access_token = token or request.cookies.get("forge_access_token")
+    if not access_token:
         return None
 
     from app.models.user import User  # local import
 
-    payload = verify_token(token)
+    payload = verify_token(access_token)
     if payload is None:
         return None
 

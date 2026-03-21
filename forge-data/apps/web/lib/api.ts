@@ -3,7 +3,7 @@
  * redirect-to-login fallback.
  */
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
-import { getAccessToken, getRefreshToken, setTokens, clearTokens } from "./auth";
+import { setTokens, clearTokens } from "./auth";
 
 // All API calls run in the browser (inside useEffect / event handlers).
 // Empty baseURL = relative paths → routed through Next.js rewrites to the backend.
@@ -12,18 +12,12 @@ const BASE_URL = "";
 export const api = axios.create({
   baseURL: BASE_URL,
   headers: { "Content-Type": "application/json" },
-  withCredentials: false,
+  withCredentials: true,
 });
 
 // ── Request interceptor — attach access token ─────────────────────────────────
 
-api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = getAccessToken();
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => config);
 
 // ── Response interceptor — handle 401 with token refresh ──────────────────────
 
@@ -49,8 +43,6 @@ api.interceptors.response.use(
 
     original._retried = true;
 
-    const refreshToken = getRefreshToken();
-    // refreshToken is always null (httpOnly cookie) — proceed directly to refresh
     if (!_refreshing) {
       _refreshing = _doRefresh().finally(() => {
         _refreshing = null;

@@ -14,7 +14,6 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { cn, parseSseLine } from "@/lib/utils";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { getAccessToken } from "@/lib/auth";
 import { useWorkspaceStore } from "@/lib/stores/workspaceStore";
 import {
   Tooltip,
@@ -134,9 +133,7 @@ export default function ChatPanel({ workspaceId, width, onClose }: ChatPanelProp
     const loadProviders = async () => {
       try {
         const resp = await fetch("/api/v1/ai/providers", {
-          headers: {
-            ...(getAccessToken() ? { Authorization: `Bearer ${getAccessToken()}` } : {}),
-          },
+          credentials: "include",
         });
         if (!resp.ok) return;
         const data = (await resp.json()) as AIProviderOption[];
@@ -219,7 +216,6 @@ export default function ChatPanel({ workspaceId, width, onClose }: ChatPanelProp
     setStreaming(true);
     setStreamingMessageId(assistantId);
 
-    const token = getAccessToken();
     const history = messages
       .filter((m) => m.role !== "system")
       .map((m) => ({ role: m.role, content: m.content }));
@@ -229,8 +225,8 @@ export default function ChatPanel({ workspaceId, width, onClose }: ChatPanelProp
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        credentials: "include",
         body: JSON.stringify({
           workspace_id: workspaceId,
           message:

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useWorkspaceStore } from "@/lib/stores/workspaceStore";
 import api from "@/lib/api";
-import { getAccessToken } from "@/lib/auth";
 import { parseSseLine } from "@/lib/utils";
 import type {
   WorkspaceCreatePayload,
@@ -73,15 +72,14 @@ export function useWorkspace(workspaceId?: string) {
     store.setKernelStatus("busy");
 
     try {
-      const token = getAccessToken();
       const resp = await fetch(
         `${BASE_URL}/api/v1/workspaces/${workspaceId}/cells/${cellId}/run`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
+          credentials: "include",
           body: JSON.stringify({ code, language }),
         }
       );

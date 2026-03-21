@@ -801,8 +801,16 @@ async def _test_sql_connection(config: ConnectionConfig) -> tuple[bool, str]:
             cx.read_sql(real_conn_str, "SELECT 1")
             return True, "Connection successful"
         except Exception as exc:
-            # Sanitise: replace the real password in the error message
-            safe_msg = str(exc).replace(config.password or "", "***") if config.password else str(exc)
+            # Sanitise: never expose raw connection strings/credentials in error text.
+            safe_msg = str(exc)
+            if config.password:
+                safe_msg = safe_msg.replace(config.password, "***")
+            if config.username:
+                safe_msg = safe_msg.replace(config.username, "***")
+            if config.host:
+                safe_msg = safe_msg.replace(config.host, "<host>")
+            if config.database:
+                safe_msg = safe_msg.replace(config.database, "<database>")
             return False, safe_msg
     except Exception as exc:
         return False, str(exc)

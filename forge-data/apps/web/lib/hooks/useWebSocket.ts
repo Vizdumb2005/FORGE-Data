@@ -1,5 +1,4 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-import { getAccessToken } from "@/lib/auth";
 
 type MessageHandler = (data: unknown) => void;
 
@@ -32,9 +31,7 @@ export function useWebSocket(url: string | null, options: UseWebSocketOptions = 
 
     wsRef.current?.close();
 
-    const token = getAccessToken();
-    const fullUrl = token ? `${url}?token=${token}` : url;
-    const ws = new WebSocket(fullUrl);
+    const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {

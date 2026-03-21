@@ -102,31 +102,28 @@ async def test_get_me(client: AsyncClient, auth_headers: dict) -> None:
 
 async def test_get_me_unauthenticated(client: AsyncClient) -> None:
     """GET /api/v1/users/me without a token should return 401."""
+    client.cookies.clear()
     resp = await client.get("/api/v1/users/me")
     assert resp.status_code == 401
 
 
 async def test_token_refresh(client: AsyncClient, registered_user: dict) -> None:
-    """A valid refresh token should return a new token pair."""
-    # Log in to get tokens
+    """A valid refresh cookie should return a new access token."""
+    client.cookies.clear()
     login = await client.post(
-        "/api/v1/auth/token",
-        data={
-            "username": "testuser@example.com",
+        "/api/v1/auth/login",
+        json={
+            "email": "testuser@example.com",
             "password": "SecurePass12",
         },
     )
-    refresh_token = login.json()["refresh_token"]
+    assert login.status_code == 200
 
-    # Refresh
-    resp = await client.post(
-        "/api/v1/auth/refresh",
-        json={"refresh_token": refresh_token},
-    )
+    resp = await client.post("/api/v1/auth/refresh")
     assert resp.status_code == 200
     body = resp.json()
     assert "access_token" in body
-    assert "refresh_token" in body
+    assert body["refresh_token"] is None
 
 
 async def test_token_refresh_with_access_token_rejected(

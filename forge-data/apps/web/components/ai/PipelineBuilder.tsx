@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, Loader2, Play } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -53,19 +53,19 @@ export default function PipelineBuilder({ workspaceId, open, onOpenChange }: Pip
     [events],
   );
 
+  const loadHistory = useCallback(async () => {
+    const { data } = await api.get<PipelineRunSummary[]>(`/api/v1/ai/workspaces/${workspaceId}/pipelines`);
+    setHistory(data);
+  }, [workspaceId]);
+
   useEffect(() => {
     if (!open) return;
     void loadHistory();
-  }, [open, workspaceId]);
+  }, [open, loadHistory]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [events, finalReport]);
-
-  const loadHistory = async () => {
-    const { data } = await api.get<PipelineRunSummary[]>(`/api/v1/ai/workspaces/${workspaceId}/pipelines`);
-    setHistory(data);
-  };
 
   const runPipeline = async () => {
     if (!canRun) return;

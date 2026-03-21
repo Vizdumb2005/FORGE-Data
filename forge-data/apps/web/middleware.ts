@@ -49,12 +49,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  const requestHeaders = new Headers(req.headers);
-  const host = req.headers.get("host") || "";
-  requestHeaders.set("x-forwarded-host", host);
-  requestHeaders.set("x-forwarded-proto", req.nextUrl.protocol.replace(":", ""));
-
-  return NextResponse.next({ request: { headers: requestHeaders } });
+  return NextResponse.next();
 }
 
 export const config = {

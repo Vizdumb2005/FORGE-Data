@@ -35,6 +35,11 @@ _NUMERIC_TYPES = frozenset(
 _LIMIT_RE = re.compile(r"\bLIMIT\s+\d+", re.IGNORECASE)
 
 _QUERY_TIMEOUT_SECONDS = 30
+_SQL_WRITE_RE = re.compile(
+    r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|ATTACH|DETACH|TRUNCATE|COPY|PRAGMA|INSTALL|LOAD)\b",
+    re.IGNORECASE,
+)
+_SAFE_CONN_VALUE_RE = re.compile(r"^[A-Za-z0-9._:/@+\-]*$")
 
 
 def _sanitize_name(name: str) -> str:
@@ -43,6 +48,13 @@ def _sanitize_name(name: str) -> str:
     if not clean or clean[0].isdigit():
         clean = f"ds_{clean}"
     return clean.lower()
+
+
+def _assert_safe_conn_value(field: str, value: Any) -> str:
+    text = str(value or "")
+    if text and not _SAFE_CONN_VALUE_RE.fullmatch(text):
+        raise ValueError(f"Invalid characters in {field}")
+    return text
 
 
 class FederatedQueryEngine:
@@ -198,12 +210,12 @@ class FederatedQueryEngine:
     async def _register_postgres(
         self, conn: duckdb.DuckDBPyConnection, name: str, config: dict[str, Any]
     ) -> None:
-        host = config.get("host", "")
+        host = _assert_safe_conn_value("host", config.get("host", ""))
         port = config.get("port", 5432)
-        database = config.get("database", "")
-        username = config.get("username", "")
-        password = config.get("password", "")
-        schema_name = config.get("schema_name", "public")
+        database = _assert_safe_conn_value("database", config.get("database", ""))
+        username = _assert_safe_conn_value("username", config.get("username", ""))
+        password = _assert_safe_conn_value("password", config.get("password", ""))
+        schema_name = _assert_safe_conn_value("schema_name", config.get("schema_name", "public"))
         # Escape single quotes in credential values to prevent connection string injection
         def _esc(v: str) -> str:
             return str(v).replace("'", "''")
@@ -225,11 +237,11 @@ class FederatedQueryEngine:
     async def _register_mysql(
         self, conn: duckdb.DuckDBPyConnection, name: str, config: dict[str, Any]
     ) -> None:
-        host = config.get("host", "")
+        host = _assert_safe_conn_value("host", config.get("host", ""))
         port = config.get("port", 3306)
-        database = config.get("database", "")
-        username = config.get("username", "")
-        password = config.get("password", "")
+        database = _assert_safe_conn_value("database", config.get("database", ""))
+        username = _assert_safe_conn_value("username", config.get("username", ""))
+        password = _assert_safe_conn_value("password", config.get("password", ""))
         def _esc(v: str) -> str:
             return str(v).replace("'", "''")
         conn_str = (
@@ -263,6 +275,8 @@ class FederatedQueryEngine:
             raise ValueError("Invalid S3 secret key format")
         if not re.match(r"^[a-z0-9-]*$", region):
             raise ValueError("Invalid S3 region format")
+        if endpoint and not _SAFE_CONN_VALUE_RE.fullmatch(str(endpoint)):
+            raise ValueError("Invalid S3 endpoint format")
 
         def _do() -> None:
             conn.execute(f"SET s3_region='{region}';")
@@ -339,6 +353,8 @@ class FederatedQueryEngine:
 
         # Inject LIMIT if not already present
         trimmed = sql.strip().rstrip(";")
+        if _SQL_WRITE_RE.search(trimmed):
+            raise QueryError(error="Only read-only SELECT queries are allowed", execution_time_ms=0)
         if not _LIMIT_RE.search(trimmed):
             trimmed = f"{trimmed} LIMIT {limit}"
 

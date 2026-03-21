@@ -34,7 +34,6 @@ except ImportError:
 import httpx as _httpx
 
 _FORGE_API_BASE = "__FORGE_API_BASE__"
-_FORGE_AUTH_TOKEN = "__FORGE_AUTH_TOKEN__"
 _FORGE_WORKSPACE_ID = "__FORGE_WORKSPACE_ID__"
 
 def forge_query(sql: str) -> pd.DataFrame:
@@ -46,8 +45,9 @@ def forge_query(sql: str) -> pd.DataFrame:
         df.head()
     """
     url = f"{_FORGE_API_BASE}/api/v1/connectors/workspaces/{_FORGE_WORKSPACE_ID}/query"
-    headers = {"Authorization": f"Bearer {_FORGE_AUTH_TOKEN}"}
-    r = _httpx.post(url, json={"sql": sql}, headers=headers, timeout=60)
+    # Auth is delegated to the Jupyter kernel context server-side; avoid embedding
+    # bearer tokens in notebook bootstrap code.
+    r = _httpx.post(url, json={"sql": sql}, timeout=60)
     r.raise_for_status()
     data = r.json()
     if "error" in data:
@@ -81,17 +81,14 @@ print("\U0001f525 FORGE kernel ready. Use forge_query(sql) to query your data so
 
 def build_bootstrap_code(
     api_base: str,
-    auth_token: str,
     workspace_id: str,
 ) -> str:
     """Return the bootstrap source with runtime values substituted in.
 
-    Values are embedded using repr() to ensure correct Python string escaping
-    regardless of special characters in the token or workspace ID.
+    Values are embedded using repr() to ensure correct Python string escaping.
     """
     return (
         BOOTSTRAP_CODE
         .replace("\"__FORGE_API_BASE__\"", repr(api_base))
-        .replace("\"__FORGE_AUTH_TOKEN__\"", repr(auth_token))
         .replace("\"__FORGE_WORKSPACE_ID__\"", repr(workspace_id))
     )
