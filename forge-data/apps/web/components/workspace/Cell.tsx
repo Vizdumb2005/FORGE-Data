@@ -18,10 +18,11 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CellState, CellRunStatus } from "@/lib/stores/workspaceStore";
+import type { CellLockInfo, CellState, CellRunStatus } from "@/lib/stores/workspaceStore";
 import OutputRenderer from "./OutputRenderer";
 import DataGrid from "@/components/data/DataGrid";
 import type { CellType, CellOutput } from "@/types";
+import { useToast } from "@/components/ui/use-toast";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -57,6 +58,11 @@ interface CellProps {
   onDelete: (cellId: string) => void;
   onContentChange: (cellId: string, content: string) => void;
   onActivate: (cellId: string) => void;
+  onFocusCell?: (cellId: string) => void;
+  onBlurCell?: (cellId: string) => void;
+  lockInfo?: CellLockInfo;
+  typingIndicator?: { user_id: string; user_name: string; color: string; char_count: number; last_seen: number };
+  currentUserId?: string | null;
   dragListeners?: Record<string, unknown>;
 }
 
@@ -68,14 +74,22 @@ export default function CellComponent({
   onDelete,
   onContentChange,
   onActivate,
+  onFocusCell,
+  onBlurCell,
+  lockInfo,
+  typingIndicator,
+  currentUserId,
   dragListeners,
 }: CellProps) {
+  const { toast } = useToast();
   const { cell, runStatus, outputs, localContent } = cellState;
   const [collapsed, setCollapsed] = useState(false);
   const [outputCollapsed, setOutputCollapsed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const canRun = ["code", "sql", "chart", "ai_chat"].includes(cell.cell_type);
+  const lockedByOther = !!lockInfo && lockInfo.user_id !== currentUserId;
+  const lockLabel = lockedByOther ? `Locked by ${lockInfo.user_name}` : null;
   const meta = CELL_TYPE_META[cell.cell_type] ?? CELL_TYPE_META.code;
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -86,16 +100,26 @@ export default function CellComponent({
     }
   }, [canRun, onRun, cell.id]);
 
+  const handleRootClick = () => {
+    onActivate(cell.id);
+    if (lockedByOther) {
+      toast({ title: `This cell is being edited by ${lockInfo.user_name}` });
+    }
+  };
+
   return (
     <div
       ref={containerRef}
-      onClick={() => onActivate(cell.id)}
+      onClick={handleRootClick}
       onKeyDown={handleKeyDown}
       className={cn(
         "group flex flex-col rounded-lg border bg-forge-surface shadow-lg transition-all duration-150 min-w-[400px]",
         isActive ? "border-forge-accent shadow-forge-accent/10 ring-1 ring-forge-accent/20" : "border-forge-border",
+        lockedByOther ? "ring-1 ring-amber-400/40 opacity-85" : "",
+        lockInfo && !lockedByOther ? "ring-1 ring-offset-0" : "",
         "hover:shadow-xl"
       )}
+      style={lockInfo && !lockedByOther ? { borderColor: lockInfo.color, boxShadow: `0 0 0 1px ${lockInfo.color}55` } : undefined}
     >
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between border-b border-forge-border bg-forge-bg/60 px-2 py-1">
@@ -116,6 +140,14 @@ export default function CellComponent({
             <meta.icon className="h-3 w-3" />
             <span className="font-medium">{meta.label}</span>
           </div>
+          {lockLabel ? (
+            <span
+              className="rounded px-1.5 py-0.5 text-[10px]"
+              style={{ backgroundColor: `${lockInfo?.color ?? "#f59e0b"}22`, color: lockInfo?.color ?? "#f59e0b" }}
+            >
+              {lockLabel}
+            </span>
+          ) : null}
 
           {/* Language tag for code cells */}
           {cell.cell_type === "code" && (
@@ -134,6 +166,11 @@ export default function CellComponent({
         </div>
 
         <div className="flex items-center gap-1">
+          {lockedByOther ? (
+            <span className="text-[10px] font-medium" style={{ color: lockInfo.color }}>
+              🔒
+            </span>
+          ) : null}
           {canRun && (
             <button
               onClick={(e) => { e.stopPropagation(); onRun(cell.id); }}
@@ -172,31 +209,52 @@ export default function CellComponent({
               language={cell.language ?? "python"}
               onChange={(v) => onContentChange(cell.id, v)}
               onRun={() => onRun(cell.id)}
+              readOnly={lockedByOther}
+              onFocus={() => onFocusCell?.(cell.id)}
+              onBlur={() => onBlurCell?.(cell.id)}
             />
           ) : cell.cell_type === "sql" ? (
             <SQLCellEditor
               content={localContent}
               onChange={(v) => onContentChange(cell.id, v)}
               onRun={() => onRun(cell.id)}
+              readOnly={lockedByOther}
+              onFocus={() => onFocusCell?.(cell.id)}
+              onBlur={() => onBlurCell?.(cell.id)}
             />
           ) : cell.cell_type === "markdown" ? (
             <MarkdownCellEditor
               content={localContent}
               onChange={(v) => onContentChange(cell.id, v)}
               isActive={isActive}
+              readOnly={lockedByOther}
+              onFocus={() => onFocusCell?.(cell.id)}
+              onBlur={() => onBlurCell?.(cell.id)}
             />
           ) : cell.cell_type === "chart" ? (
             <ChartCellEditor
               content={localContent}
               onChange={(v) => onContentChange(cell.id, v)}
               onRun={() => onRun(cell.id)}
+              readOnly={lockedByOther}
+              onFocus={() => onFocusCell?.(cell.id)}
+              onBlur={() => onBlurCell?.(cell.id)}
             />
           ) : cell.cell_type === "ai_chat" ? (
             <AIChatCellEditor
               content={localContent}
               onChange={(v) => onContentChange(cell.id, v)}
               onRun={() => onRun(cell.id)}
+              readOnly={lockedByOther}
+              onFocus={() => onFocusCell?.(cell.id)}
+              onBlur={() => onBlurCell?.(cell.id)}
             />
+          ) : null}
+
+          {typingIndicator && typingIndicator.user_id !== currentUserId && lockInfo ? (
+            <div className="border-t border-forge-border px-3 py-1 text-[10px]" style={{ color: typingIndicator.color }}>
+              {typingIndicator.user_name} typing · {typingIndicator.char_count} chars
+            </div>
           ) : null}
 
           {/* ── Output ─────────────────────────────────────────────────── */}
@@ -220,11 +278,17 @@ function CodeCellEditor({
   language,
   onChange,
   onRun,
+  readOnly,
+  onFocus,
+  onBlur,
 }: {
   content: string;
   language: string;
   onChange: (v: string) => void;
   onRun: () => void;
+  readOnly?: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }) {
   const lineCount = Math.max(content.split("\n").length, 3);
   const height = Math.max(80, Math.min(lineCount * 19 + 16, 500));
@@ -244,8 +308,11 @@ function CodeCellEditor({
             keybindings: [2048 + 3], // Shift+Enter
             run: () => onRun(),
           });
+          editor.onDidFocusEditorWidget(() => onFocus?.());
+          editor.onDidBlurEditorWidget(() => onBlur?.());
         }}
         options={{
+          readOnly,
           minimap: { enabled: false },
           fontSize: 13,
           fontFamily: "'DM Mono', monospace",
@@ -271,10 +338,16 @@ function SQLCellEditor({
   content,
   onChange,
   onRun,
+  readOnly,
+  onFocus,
+  onBlur,
 }: {
   content: string;
   onChange: (v: string) => void;
   onRun: () => void;
+  readOnly?: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }) {
   const lineCount = Math.max(content.split("\n").length, 2);
   const height = Math.max(60, Math.min(lineCount * 19 + 16, 300));
@@ -294,8 +367,11 @@ function SQLCellEditor({
             keybindings: [2048 + 3],
             run: () => onRun(),
           });
+          editor.onDidFocusEditorWidget(() => onFocus?.());
+          editor.onDidBlurEditorWidget(() => onBlur?.());
         }}
         options={{
+          readOnly,
           minimap: { enabled: false },
           fontSize: 13,
           fontFamily: "'DM Mono', monospace",
@@ -320,10 +396,16 @@ function MarkdownCellEditor({
   content,
   onChange,
   isActive,
+  readOnly,
+  onFocus,
+  onBlur,
 }: {
   content: string;
   onChange: (v: string) => void;
   isActive: boolean;
+  readOnly?: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const showEditor = isActive && editing;
@@ -332,7 +414,7 @@ function MarkdownCellEditor({
     return (
       <div
         className="cursor-text px-4 py-3 min-h-[60px]"
-        onDoubleClick={() => setEditing(true)}
+        onDoubleClick={() => { if (!readOnly) setEditing(true); }}
       >
         {content ? (
           <div className="prose prose-invert prose-sm max-w-none text-forge-text">
@@ -364,8 +446,11 @@ function MarkdownCellEditor({
               keybindings: [2048 + 3],
               run: () => setEditing(false),
             });
+            editor.onDidFocusEditorWidget(() => onFocus?.());
+            editor.onDidBlurEditorWidget(() => onBlur?.());
           }}
           options={{
+            readOnly,
             minimap: { enabled: false },
             fontSize: 13,
             fontFamily: "'DM Mono', monospace",
@@ -395,10 +480,16 @@ function ChartCellEditor({
   content,
   onChange,
   onRun,
+  readOnly,
+  onFocus,
+  onBlur,
 }: {
   content: string;
   onChange: (v: string) => void;
   onRun: () => void;
+  readOnly?: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }) {
   const lineCount = Math.max(content.split("\n").length, 4);
   const height = Math.max(100, Math.min(lineCount * 19 + 16, 400));
@@ -418,8 +509,11 @@ function ChartCellEditor({
             keybindings: [2048 + 3],
             run: () => onRun(),
           });
+          editor.onDidFocusEditorWidget(() => onFocus?.());
+          editor.onDidBlurEditorWidget(() => onBlur?.());
         }}
         options={{
+          readOnly,
           minimap: { enabled: false },
           fontSize: 13,
           fontFamily: "'DM Mono', monospace",
@@ -445,10 +539,16 @@ function AIChatCellEditor({
   content,
   onChange,
   onRun,
+  readOnly,
+  onFocus,
+  onBlur,
 }: {
   content: string;
   onChange: (v: string) => void;
   onRun: () => void;
+  readOnly?: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }) {
   const lineCount = Math.max(content.split("\n").length, 2);
   const height = Math.max(80, Math.min(lineCount * 19 + 16, 300));
@@ -468,8 +568,11 @@ function AIChatCellEditor({
             keybindings: [2048 + 3],
             run: () => onRun(),
           });
+          editor.onDidFocusEditorWidget(() => onFocus?.());
+          editor.onDidBlurEditorWidget(() => onBlur?.());
         }}
         options={{
+          readOnly,
           minimap: { enabled: false },
           fontSize: 13,
           fontFamily: "'DM Mono', monospace",

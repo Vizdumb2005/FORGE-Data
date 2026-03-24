@@ -6,6 +6,7 @@ from app.models.data_quality import DataQualityReport, DataQualityRuleset
 from app.models.dataset import Dataset, SourceType
 from app.models.dataset_version import DatasetVersion
 from app.models.experiment import Experiment, ExperimentRun
+from app.models.lineage import LineageEdge, LineageNode
 from app.models.metric import Metric
 from app.models.pipeline import Pipeline, PipelineRun, PipelineStatus, ScheduledPipeline
 from app.models.publishing import PublishedDashboard, ScheduledReport
@@ -23,6 +24,8 @@ __all__ = [
     "DatasetVersion",
     "Experiment",
     "ExperimentRun",
+    "LineageEdge",
+    "LineageNode",
     "LLMProvider",
     "MemberRole",
     "Metric",

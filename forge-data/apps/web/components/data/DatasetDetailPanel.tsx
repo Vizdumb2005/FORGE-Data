@@ -23,6 +23,8 @@ import {
   getQualityReports,
   saveRuleset,
   executeQuery,
+  maskDatasetPII,
+  acknowledgeDatasetPII,
 } from "@/lib/api/datasets";
 import { formatDate } from "@/lib/utils";
 import type {
@@ -44,7 +46,9 @@ import {
   XCircle,
   AlertTriangle,
   RotateCcw,
+  ShieldAlert,
 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 
 interface DatasetDetailPanelProps {
   workspaceId: string;
@@ -52,6 +56,7 @@ interface DatasetDetailPanelProps {
   open: boolean;
   onClose: () => void;
   onDeleted?: () => void;
+  onOpenLineage?: () => void;
 }
 
 export default function DatasetDetailPanel({
@@ -59,6 +64,7 @@ export default function DatasetDetailPanel({
   datasetId,
   open,
   onClose,
+  onOpenLineage,
 }: DatasetDetailPanelProps) {
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,6 +107,7 @@ export default function DatasetDetailPanel({
               <TabsTrigger value="quality">Quality</TabsTrigger>
               <TabsTrigger value="versions">Versions</TabsTrigger>
               <TabsTrigger value="preview">Preview</TabsTrigger>
+              {onOpenLineage ? <TabsTrigger value="lineage" onClick={onOpenLineage}>Lineage</TabsTrigger> : null}
             </TabsList>
 
             <div className="flex-1 overflow-auto">
@@ -236,6 +243,15 @@ function StatCard({ label, value }: { label: string; value: string }) {
 
 function SchemaTab({ dataset }: { dataset: Dataset }) {
   const schema = dataset.schema_snapshot ?? [];
+  const { toast } = useToast();
+  const [localDataset, setLocalDataset] = useState(dataset);
+  const piiColumns = localDataset.metadata_info?.pii_columns ?? {};
+  const piiDetected = Boolean(localDataset.metadata_info?.pii_detected);
+  const piiAcknowledged = Boolean(localDataset.metadata_info?.pii_acknowledged);
+
+  useEffect(() => {
+    setLocalDataset(dataset);
+  }, [dataset]);
 
   if (schema.length === 0) {
     return (
@@ -246,8 +262,55 @@ function SchemaTab({ dataset }: { dataset: Dataset }) {
   }
 
   return (
-    <div className="overflow-auto rounded-lg border border-forge-border">
-      <table className="w-full text-sm">
+    <div className="space-y-3">
+      {piiDetected && !piiAcknowledged ? (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-medium text-amber-200">
+                <ShieldAlert className="h-4 w-4" />
+                ⚠️ PII Detected: This dataset contains potential personally identifiable information
+              </p>
+              <p className="mt-1 text-xs text-amber-100/80">
+                {Object.entries(piiColumns).map(([col, types]) => `${col} (${types.join(", ")})`).join(" · ")}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                className="rounded border border-amber-300/50 px-2 py-1 text-xs text-amber-100 hover:bg-amber-400/20"
+                onClick={async () => {
+                  try {
+                    const masked = await maskDatasetPII(localDataset.workspace_id, localDataset.id);
+                    setLocalDataset(masked);
+                    toast({ title: "PII masked successfully" });
+                  } catch {
+                    toast({ title: "Failed to mask PII", variant: "destructive" });
+                  }
+                }}
+              >
+                Mask PII
+              </button>
+              <button
+                className="rounded border border-amber-300/50 px-2 py-1 text-xs text-amber-100 hover:bg-amber-400/20"
+                onClick={async () => {
+                  try {
+                    const updated = await acknowledgeDatasetPII(localDataset.workspace_id, localDataset.id);
+                    setLocalDataset(updated);
+                    toast({ title: "PII warning acknowledged" });
+                  } catch {
+                    toast({ title: "Failed to acknowledge PII warning", variant: "destructive" });
+                  }
+                }}
+              >
+                Acknowledge
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="overflow-auto rounded-lg border border-forge-border">
+        <table className="w-full text-sm">
         <thead>
           <tr className="bg-forge-bg">
             <th className="px-3 py-2 text-left font-mono text-xs text-forge-muted">
@@ -259,12 +322,15 @@ function SchemaTab({ dataset }: { dataset: Dataset }) {
             <th className="px-3 py-2 text-left font-mono text-xs text-forge-muted">
               Nullable
             </th>
-            <th className="px-3 py-2 text-left font-mono text-xs text-forge-muted">
-              Samples
-            </th>
-          </tr>
-        </thead>
-        <tbody>
+              <th className="px-3 py-2 text-left font-mono text-xs text-forge-muted">
+                Samples
+              </th>
+              <th className="px-3 py-2 text-left font-mono text-xs text-forge-muted">
+                PII
+              </th>
+            </tr>
+          </thead>
+          <tbody>
           {schema.map((col, i) => (
             <tr key={i} className="border-t border-forge-border/50">
               <td className="px-3 py-1.5 font-mono text-xs font-medium text-foreground">
@@ -281,10 +347,24 @@ function SchemaTab({ dataset }: { dataset: Dataset }) {
               <td className="max-w-[180px] truncate px-3 py-1.5 text-xs text-forge-muted">
                 {col.sample_values?.slice(0, 3).join(", ") ?? "—"}
               </td>
+              <td className="px-3 py-1.5 text-xs">
+                {col.pii_types && col.pii_types.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {col.pii_types.map((pii) => (
+                      <Badge key={`${col.name}-${pii}`} variant="warning" className="font-mono text-[10px]">
+                        {pii}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-forge-muted">—</span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
     </div>
   );
 }

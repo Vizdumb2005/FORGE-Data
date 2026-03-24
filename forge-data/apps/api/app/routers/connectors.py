@@ -415,6 +415,58 @@ async def get_dataset(
 
 
 @router.post(
+    "/workspaces/{workspace_id}/datasets/{dataset_id}/pii/mask",
+    response_model=DatasetRead,
+    summary="Mask detected PII columns in-place for a dataset",
+)
+async def mask_dataset_pii(
+    workspace_id: str,
+    dataset_id: str,
+    current_user: CurrentUser,
+    db: DBSession,
+    request: Request,
+) -> DatasetRead:
+    await workspace_service.check_workspace_role(db, workspace_id, current_user.id, ("editor", "admin"))
+    dataset = await dataset_service.mask_detected_pii(db, workspace_id, dataset_id)
+    await audit_service.log_event(
+        db,
+        action="dataset.pii.mask",
+        user_id=current_user.id,
+        workspace_id=workspace_id,
+        resource_type="dataset",
+        resource_id=dataset_id,
+        ip_address=request.client.host if request.client else None,
+    )
+    return DatasetRead.from_orm_safe(dataset)
+
+
+@router.post(
+    "/workspaces/{workspace_id}/datasets/{dataset_id}/pii/acknowledge",
+    response_model=DatasetRead,
+    summary="Acknowledge PII warning for a dataset",
+)
+async def acknowledge_dataset_pii(
+    workspace_id: str,
+    dataset_id: str,
+    current_user: CurrentUser,
+    db: DBSession,
+    request: Request,
+) -> DatasetRead:
+    await workspace_service.get_workspace(db, workspace_id, current_user.id)
+    dataset = await dataset_service.acknowledge_pii(db, workspace_id, dataset_id, current_user.id)
+    await audit_service.log_event(
+        db,
+        action="dataset.pii.acknowledge",
+        user_id=current_user.id,
+        workspace_id=workspace_id,
+        resource_type="dataset",
+        resource_id=dataset_id,
+        ip_address=request.client.host if request.client else None,
+    )
+    return DatasetRead.from_orm_safe(dataset)
+
+
+@router.post(
     "/workspaces/{workspace_id}/query",
     summary="Execute SQL against registered datasets",
 )

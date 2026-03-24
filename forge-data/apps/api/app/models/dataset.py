@@ -76,6 +76,9 @@ class Dataset(Base):
     # Profiling data (populated after ingestion / DuckDB registration)
     profile_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # Additional metadata (e.g., detected PII column map)
+    metadata_info: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
+
     # Versioning — incremented on each re-import
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 

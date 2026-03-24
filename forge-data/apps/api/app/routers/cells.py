@@ -3,12 +3,14 @@
 from fastapi import APIRouter
 from sqlalchemy import select
 
+from app.core.lineage_tracker import LineageTracker
 from app.dependencies import CurrentUser, DBSession
 from app.models.cell import Cell
 from app.schemas.cell import CellCreate, CellRead, CellUpdate
 from app.services import workspace_service
 
 router = APIRouter()
+_lineage_tracker = LineageTracker()
 
 
 @router.get(
@@ -113,6 +115,7 @@ async def delete_cell(
 ) -> None:
     await workspace_service.get_workspace_for_user(db, workspace_id, current_user.id)
     cell = await _get_cell_or_404(db, workspace_id, cell_id)
+    await _lineage_tracker.delete_cell_lineage(db, workspace_id, cell_id)
     await db.delete(cell)
     await db.flush()
 

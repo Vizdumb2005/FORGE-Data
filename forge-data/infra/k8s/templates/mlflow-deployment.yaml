@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-mlflow
+spec:
+  replicas: {{ .Values.replicas.mlflow }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-mlflow
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-mlflow
+    spec:
+      containers:
+        - name: mlflow
+          image: "{{ .Values.image.mlflow.repository }}:{{ .Values.image.mlflow.tag }}"
+          args:
+            - mlflow
+            - server
+            - --host
+            - 0.0.0.0
+            - --port
+            - "5000"
+            - --backend-store-uri
+            - postgresql://forge:$(POSTGRES_PASSWORD)@{{ .Release.Name }}-postgres:5432/forge
+            - --default-artifact-root
+            - s3://forge-data
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secret
+                  key: POSTGRES_PASSWORD
+            - name: MLFLOW_S3_ENDPOINT_URL
+              value: http://{{ .Release.Name }}-minio:9000
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secret
+                  key: MINIO_ACCESS_KEY
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secret
+                  key: MINIO_SECRET_KEY
+          ports:
+            - containerPort: 5000
+          resources:
+            {{- toYaml .Values.resources.mlflow | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-mlflow
+spec:
+  type: {{ .Values.service.mlflow.type }}
+  selector:
+    app: {{ .Release.Name }}-mlflow
+  ports:
+    - name: http
+      port: {{ .Values.service.mlflow.port }}
+      targetPort: 5000

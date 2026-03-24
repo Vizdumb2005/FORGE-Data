@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useWorkspaceStore } from "@/lib/stores/workspaceStore";
 import api from "@/lib/api";
 import { parseSseLine } from "@/lib/utils";
+import { useWorkspaceSocket } from "@/lib/hooks/useWorkspaceSocket";
 import type {
   WorkspaceCreatePayload,
   WorkspaceUpdatePayload,
@@ -17,6 +18,13 @@ const DEBOUNCE_MS = 500;
 export function useWorkspace(workspaceId?: string) {
   const store = useWorkspaceStore();
   const debounceTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const socketApi = useWorkspaceSocket(workspaceId ?? "");
+  const {
+    emitCellContentChange,
+    emitCellFocus,
+    emitCursorMove,
+    emitCellBlur,
+  } = socketApi;
 
   useEffect(() => {
     store.fetchWorkspaces();
@@ -47,7 +55,8 @@ export function useWorkspace(workspaceId?: string) {
       debounceTimers.current.delete(cellId);
       store.updateCell(workspaceId, cellId, { content });
     }, DEBOUNCE_MS));
-  }, [workspaceId, store]);
+    emitCellContentChange(cellId, content);
+  }, [workspaceId, store, emitCellContentChange]);
 
   // Run a cell via SSE streaming
   const runCell = useCallback(async (cellId: string) => {
@@ -240,6 +249,17 @@ export function useWorkspace(workspaceId?: string) {
     }
   }, [workspaceId]);
 
+  const focusCell = useCallback((cellId: string) => {
+    if (!workspaceId) return;
+    emitCellFocus(cellId);
+    emitCursorMove(cellId);
+  }, [workspaceId, emitCellFocus, emitCursorMove]);
+
+  const blurCell = useCallback((cellId: string) => {
+    if (!workspaceId) return;
+    emitCellBlur(cellId);
+  }, [workspaceId, emitCellBlur]);
+
   const createWorkspace = (payload: WorkspaceCreatePayload) =>
     store.createWorkspace(payload);
   const updateWorkspace = (id: string, payload: WorkspaceUpdatePayload) =>
@@ -273,6 +293,11 @@ export function useWorkspace(workspaceId?: string) {
     kernelStatus: store.kernelStatus,
     activeCellId: store.activeCellId,
     isRunningAll: store.isRunningAll,
+    collaborators: store.collaborators,
+    presenceMap: store.presenceMap,
+    cursors: store.cursors,
+    lockedCells: store.lockedCells,
+    typingByCell: store.typingByCell,
     zoom: store.zoom,
     loading: store.loading,
     error: store.error,
@@ -289,5 +314,7 @@ export function useWorkspace(workspaceId?: string) {
     runAll,
     restartKernel,
     interruptKernel,
+    focusCell,
+    blurCell,
   };
 }

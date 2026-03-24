@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+data:
+  APP_ENV: {{ .Values.env.APP_ENV | quote }}
+  NODE_ENV: {{ .Values.env.NODE_ENV | quote }}
+  API_PREFIX: {{ .Values.env.API_PREFIX | quote }}
+  CORS_ORIGINS: {{ .Values.env.CORS_ORIGINS | quote }}
+  POSTGRES_DB: forge
+  POSTGRES_USER: forge
+  POSTGRES_HOST: {{ .Release.Name }}-postgres
+  POSTGRES_PORT: "5432"
+  REDIS_URL: {{ printf "redis://%s-redis:6379/0" .Release.Name | quote }}
+  MINIO_ENDPOINT: {{ printf "%s-minio:9000" .Release.Name | quote }}
+  MINIO_BUCKET: forge-data
+  MLFLOW_TRACKING_URI: {{ printf "http://%s-mlflow:5000" .Release.Name | quote }}

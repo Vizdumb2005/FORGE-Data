@@ -171,3 +171,17 @@ export async function getQualityReports(
   );
   return data;
 }
+
+export async function maskDatasetPII(workspaceId: string, datasetId: string): Promise<Dataset> {
+  const { data } = await api.post<Dataset>(
+    `${BASE}/${workspaceId}/datasets/${datasetId}/pii/mask`,
+  );
+  return data;
+}
+
+export async function acknowledgeDatasetPII(workspaceId: string, datasetId: string): Promise<Dataset> {
+  const { data } = await api.post<Dataset>(
+    `${BASE}/${workspaceId}/datasets/${datasetId}/pii/acknowledge`,
+  );
+  return data;
+}

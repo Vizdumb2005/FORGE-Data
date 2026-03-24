@@ -104,6 +104,13 @@ export interface Dataset {
   size_bytes: number | null;
   schema_snapshot: SchemaColumn[] | null;
   profile_data: DatasetProfile | null;
+  metadata_info: {
+    pii_columns?: Record<string, string[]>;
+    pii_detected?: boolean;
+    pii_acknowledged?: boolean;
+    pii_masked?: boolean;
+    pii_acknowledged_by?: string[];
+  } | null;
   has_connection_config: boolean;
   version: number;
   created_at: string;
@@ -115,6 +122,7 @@ export interface SchemaColumn {
   dtype: string;
   nullable?: boolean;
   sample_values?: unknown[];
+  pii_types?: string[];
 }
 
 export interface DatasetPreview {

@@ -1,118 +1,119 @@
-# Default values for the FORGE Data Helm chart.
-# Override with: helm install forge-data . -f my-values.yaml
-
-replicaCount: 1
-
 image:
-  registry: ghcr.io
   pullPolicy: IfNotPresent
   web:
-    repository: your-org/forge-data-web
-    tag: "latest"
+    repository: ghcr.io/your-org/forge-data-web
+    tag: latest
   api:
-    repository: your-org/forge-data-api
-    tag: "latest"
+    repository: ghcr.io/your-org/forge-data-api
+    tag: latest
+  mlflow:
+    repository: ghcr.io/mlflow/mlflow
+    tag: latest
+  redis:
+    repository: redis
+    tag: 7-alpine
+  postgres:
+    repository: postgres
+    tag: 16-alpine
+  minio:
+    repository: minio/minio
+    tag: latest
+  jupyter:
+    repository: jupyter/base-notebook
+    tag: latest
+
+replicas:
+  web: 2
+  api: 2
+  mlflow: 1
+  redis: 1
+  jupyter: 1
 
 service:
-  type: ClusterIP
   web:
+    type: ClusterIP
     port: 3000
   api:
+    type: ClusterIP
     port: 8000
+  mlflow:
+    type: ClusterIP
+    port: 5000
+  redis:
+    type: ClusterIP
+    port: 6379
+  jupyter:
+    type: ClusterIP
+    port: 8888
+  minio:
+    type: ClusterIP
+    apiPort: 9000
+    consolePort: 9001
+  postgres:
+    type: ClusterIP
+    port: 5432
 
 ingress:
   enabled: true
   className: nginx
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-  hosts:
-    - host: forge-data.local
-      paths:
-        - path: /
-          pathType: Prefix
-          service: web
-        - path: /api
-          pathType: Prefix
-          service: api
-        - path: /jupyter
-          pathType: Prefix
-          service: jupyter
+  host: forge.local
+  annotations: {}
+  tls:
+    enabled: false
+    secretName: forge-data-tls
+
+storage:
+  postgres:
+    size: 20Gi
+  minio:
+    size: 100Gi
 
 resources:
   web:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { cpu: 1, memory: 1Gi }
   api:
-    requests:
-      cpu: 200m
-      memory: 512Mi
-    limits:
-      cpu: 1000m
-      memory: 1Gi
+    requests: { cpu: 500m, memory: 512Mi }
+    limits: { cpu: 2, memory: 2Gi }
+  postgres:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 1, memory: 2Gi }
+  redis:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  minio:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 1, memory: 2Gi }
+  mlflow:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits: { cpu: 1, memory: 1Gi }
   jupyter:
-    requests:
-      cpu: 200m
-      memory: 512Mi
-    limits:
-      cpu: 2000m
-      memory: 2Gi
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: 2, memory: 4Gi }
 
-# PostgreSQL — disable to use an external managed DB
-postgresql:
-  enabled: true
-  auth:
-    database: forge
-    username: forge
-    password: ""  # REQUIRED: set via --set or existingSecret at deploy time
-  primary:
-    persistence:
-      enabled: true
-      size: 20Gi
-
-# Redis
-redis:
-  enabled: true
-  auth:
+autoscaling:
+  web:
     enabled: true
-  master:
-    persistence:
-      enabled: true
-      size: 5Gi
-
-# MinIO
-minio:
-  enabled: true
-  auth:
-    rootUser: forge
-    rootPassword: ""  # REQUIRED: set via --set or existingSecret at deploy time
-  persistence:
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  api:
     enabled: true
-    size: 50Gi
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
 
-# MLflow
-mlflow:
-  enabled: true
-
-# Environment — these map to your .env variables
 env:
-  # REQUIRED: generate with: openssl rand -hex 32
-  JWT_SECRET: ""
-  JWT_ALGORITHM: "HS256"
-  JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "15"
-  JWT_REFRESH_TOKEN_EXPIRE_DAYS: "30"
-  # REQUIRED: generate with: openssl rand -hex 16
-  ENCRYPTION_SALT: ""
-  NODE_ENV: "production"
-  APP_ENV: "production"
-  OPENAI_API_KEY: ""
-  ANTHROPIC_API_KEY: ""
-  OLLAMA_BASE_URL: ""
+  APP_ENV: production
+  NODE_ENV: production
+  API_PREFIX: /api/v1
+  CORS_ORIGINS: "*"
 
-# Secrets — use a Kubernetes Secret or external secrets manager in production.
-# Set existingSecret to the name of a pre-created Secret containing all
-# required keys (JWT_SECRET, ENCRYPTION_SALT, POSTGRES_PASSWORD, etc.).
-existingSecret: ""
+secrets:
+  jwtSecret: change-me
+  postgresPassword: change-me
+  minioSecretKey: change-me
+  minioAccessKey: forge
+  openaiApiKey: ""
+  anthropicApiKey: ""
+  ollamaBaseUrl: ""

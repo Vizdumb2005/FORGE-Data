@@ -27,6 +27,7 @@ class SchemaColumn(BaseModel):
     dtype: str
     nullable: bool = True
     sample_values: list[Any] | None = None
+    pii_types: list[str] | None = None
 
 
 class SchemaTable(BaseModel):
@@ -52,6 +53,7 @@ class DatasetRead(BaseModel):
     has_connection_config: bool = False
     schema_snapshot: list | None = None
     profile_data: dict[str, Any] | None = None
+    metadata_info: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -72,6 +74,7 @@ class DatasetRead(BaseModel):
             has_connection_config=bool(dataset.connection_config),
             schema_snapshot=dataset.schema_snapshot,
             profile_data=dataset.profile_data,
+            metadata_info=dataset.metadata_info,
             created_at=dataset.created_at,
             updated_at=dataset.updated_at,
         )

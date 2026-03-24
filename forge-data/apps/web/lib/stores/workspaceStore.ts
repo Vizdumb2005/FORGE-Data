@@ -24,6 +24,28 @@ export interface CellState {
   dirty: boolean;
 }
 
+export interface CollaboratorPresence {
+  user_id: string;
+  user_name: string;
+  color: string;
+  cursor_cell_id: string | null;
+  last_seen: number;
+}
+
+export interface CollaboratorCursor {
+  user_id: string;
+  user_name: string;
+  color: string;
+  cell_id: string;
+  last_seen: number;
+}
+
+export interface CellLockInfo {
+  user_id: string;
+  user_name: string;
+  color: string;
+}
+
 interface WorkspaceState {
   workspaces: Workspace[];
   activeWorkspace: Workspace | null;
@@ -33,6 +55,11 @@ interface WorkspaceState {
   activeCellId: string | null;
   isRunningAll: boolean;
   zoom: number;
+  collaborators: CollaboratorPresence[];
+  presenceMap: Record<string, CollaboratorPresence>;
+  cursors: Record<string, CollaboratorCursor>;
+  lockedCells: Record<string, CellLockInfo>;
+  typingByCell: Record<string, { user_id: string; user_name: string; color: string; char_count: number; last_seen: number }>;
   loading: boolean;
   error: string | null;
 }
@@ -51,6 +78,21 @@ interface WorkspaceActions {
   updateCell: (workspaceId: string, cellId: string, payload: CellUpdatePayload) => void;
   updateCellSync: (workspaceId: string, cellId: string, payload: CellUpdatePayload) => Promise<void>;
   updateCellContent: (cellId: string, content: string) => void;
+  applyRemoteCellContent: (cellId: string, content: string) => void;
+  applyRemoteCellOutput: (
+    cellId: string,
+    output: {
+      outputs?: CellOutput[];
+      status?: string;
+    },
+  ) => void;
+  setPresenceMap: (users: CollaboratorPresence[]) => void;
+  upsertCursor: (cursor: CollaboratorCursor) => void;
+  setTypingIndicator: (cellId: string, typing: { user_id: string; user_name: string; color: string; char_count: number; last_seen: number }) => void;
+  clearTypingIndicator: (cellId: string) => void;
+  setCollaborators: (users: CollaboratorPresence[]) => void;
+  setCellLocked: (cellId: string, lock: CellLockInfo) => void;
+  setCellUnlocked: (cellId: string) => void;
   deleteCell: (cellId: string, workspaceId: string) => Promise<void>;
   updateCellPosition: (cellId: string, workspaceId: string, x: number, y: number) => Promise<void>;
   reorderCells: (orderedIds: string[]) => void;
@@ -80,6 +122,11 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
     activeCellId: null,
     isRunningAll: false,
     zoom: 1,
+    collaborators: [],
+    presenceMap: {},
+    cursors: {},
+    lockedCells: {},
+    typingByCell: {},
     loading: false,
     error: null,
 
@@ -205,6 +252,53 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
         cs.dirty = content !== cs.cell.content;
       });
     },
+
+    applyRemoteCellContent: (cellId, content) => {
+      set((s) => {
+        const cs = s.cellStates[cellId];
+        if (!cs) return;
+        cs.localContent = content;
+        cs.cell.content = content;
+        cs.dirty = false;
+      });
+    },
+
+    applyRemoteCellOutput: (cellId, output) => {
+      set((s) => {
+        const cs = s.cellStates[cellId];
+        if (!cs) return;
+        cs.cell.output = (output.outputs?.[0] ?? null);
+        const outputs = output.outputs ?? [];
+        cs.outputs = outputs;
+        cs.runStatus = (output.status === "ok" ? "success" : output.status === "error" ? "error" : cs.runStatus);
+      });
+    },
+
+    setCollaborators: (users) => set((s) => { s.collaborators = users; }),
+    setPresenceMap: (users) => set((s) => {
+      const map: Record<string, CollaboratorPresence> = {};
+      for (const user of users) {
+        map[user.user_id] = user;
+      }
+      s.presenceMap = map;
+      s.collaborators = users;
+    }),
+    upsertCursor: (cursor) => set((s) => {
+      s.cursors[cursor.user_id] = cursor;
+      const presence = s.presenceMap[cursor.user_id];
+      if (presence) {
+        presence.cursor_cell_id = cursor.cell_id;
+        presence.last_seen = cursor.last_seen;
+      }
+    }),
+    setTypingIndicator: (cellId, typing) => set((s) => {
+      s.typingByCell[cellId] = typing;
+    }),
+    clearTypingIndicator: (cellId) => set((s) => {
+      delete s.typingByCell[cellId];
+    }),
+    setCellLocked: (cellId, lock) => set((s) => { s.lockedCells[cellId] = lock; }),
+    setCellUnlocked: (cellId) => set((s) => { delete s.lockedCells[cellId]; }),
 
     deleteCell: async (cellId, workspaceId) => {
       await api.delete(`/api/v1/workspaces/${workspaceId}/cells/${cellId}`);

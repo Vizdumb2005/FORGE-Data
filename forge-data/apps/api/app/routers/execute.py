@@ -10,7 +10,9 @@ from sqlalchemy import select
 from sse_starlette.sse import EventSourceResponse
 
 from app.core.exceptions import NotFoundException
+from app.core.lineage_tracker import LineageTracker
 from app.core.query_engine import QueryError
+from app.core.realtime import realtime_manager
 from app.dependencies import CurrentUser, DBSession, KernelMgr, QueryEngine
 from app.models.cell import Cell
 from app.services import audit_service, workspace_service
@@ -18,6 +20,7 @@ from app.services import audit_service, workspace_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+_lineage_tracker = LineageTracker()
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -114,6 +117,17 @@ async def run_cell(
             cell.output = output_json
             cell.kernel_id = kernel_id
             cell.last_executed_at = datetime.now(UTC)
+            await realtime_manager.broadcast_cell_executed(workspace_id, cell_id, output_json)
+            await _lineage_tracker.record_execution(
+                db=db,
+                workspace_id=workspace_id,
+                cell_id=cell_id,
+                input_dataset_ids=[],
+                output_dataset_ids=[],
+                code_snippet=code,
+                execution_time_ms=exec_result.execution_time_ms,
+                executed_by_user_id=current_user.id,
+            )
 
             # Send complete event
             yield {
@@ -275,6 +289,17 @@ async def _execute_sql(
     }
     cell.output = output
     cell.last_executed_at = datetime.now(UTC)
+    await realtime_manager.broadcast_cell_executed(workspace_id, cell.id, output)
+    await _lineage_tracker.record_execution(
+        db=db,
+        workspace_id=workspace_id,
+        cell_id=cell.id,
+        input_dataset_ids=[],
+        output_dataset_ids=[],
+        code_snippet=code,
+        execution_time_ms=int(output.get("execution_time_ms", 0) or 0),
+        executed_by_user_id=user.id,
+    )
 
     await audit_service.log_event(
         db,

@@ -1,0 +1,45 @@
+replicas:
+  web: 3
+  api: 4
+
+ingress:
+  host: forge.example.com
+  tls:
+    enabled: true
+    secretName: forge-data-tls
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+
+resources:
+  web:
+    requests: { cpu: 500m, memory: 512Mi }
+    limits: { cpu: 2, memory: 2Gi }
+  api:
+    requests: { cpu: 1000m, memory: 1Gi }
+    limits: { cpu: 4, memory: 4Gi }
+  postgres:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: 2, memory: 4Gi }
+  minio:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: 2, memory: 4Gi }
+  jupyter:
+    requests: { cpu: 1000m, memory: 2Gi }
+    limits: { cpu: 4, memory: 8Gi }
+
+autoscaling:
+  web:
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 65
+  api:
+    minReplicas: 4
+    maxReplicas: 12
+    targetCPUUtilizationPercentage: 65
+
+storage:
+  postgres:
+    size: 200Gi
+  minio:
+    size: 500Gi

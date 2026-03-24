@@ -132,6 +132,39 @@ make shell-db      # psql into PostgreSQL
 
 ---
 
+## Self-Hosting
+
+### Docker Compose (Recommended for single server)
+
+```bash
+git clone https://github.com/your-org/forge-data
+cd forge-data
+cp .env.example .env
+# Edit .env with your values (JWT_SECRET, strong DB password, etc.)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Visit http://your-server-ip
+```
+
+### Kubernetes (Helm)
+
+```bash
+helm install forge-data ./infra/k8s --namespace forge --create-namespace -f infra/k8s/values.prod.yaml
+```
+
+### System Requirements
+
+- Minimum: 4 CPU cores, 8GB RAM, 50GB disk
+- Recommended: 8 CPU, 16GB RAM, 200GB SSD
+- For ML workloads: GPU support via Jupyter GPU image override
+
+### BYOK (Bring Your Own Key)
+
+FORGE never stores or sends your LLM API keys to any third party.
+Keys are encrypted at rest using AES-256 (Fernet) with a key derived from your JWT_SECRET.
+All inference happens directly from your server to the LLM provider.
+
+---
+
 ## Project Structure
 
 ```

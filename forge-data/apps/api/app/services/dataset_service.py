@@ -3,6 +3,7 @@
 import io
 from typing import Any
 
+from app.core.pii_detector import PIIDetector
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,7 @@ from app.core.security import decrypt_field, encrypt_field
 from app.models.dataset import Dataset, SourceType
 from app.schemas.dataset import DatasetCreate, DatasetPreview, DatasetUpdate
 
+_pii_detector = PIIDetector()
 
 async def list_datasets(db: AsyncSession, workspace_id: str) -> list[Dataset]:
     result = await db.execute(
@@ -117,12 +119,14 @@ async def ingest_file(
         df = pd.read_csv(buf)
 
     # Build schema snapshot
+    pii_columns = await _pii_detector.scan_dataframe(df)
     schema = [
         {
             "name": col,
             "dtype": str(df[col].dtype),
             "nullable": bool(df[col].isna().any()),
             "sample_values": df[col].dropna().head(3).tolist(),
+            "pii_types": pii_columns.get(str(col), []),
         }
         for col in df.columns
     ]
@@ -142,6 +146,11 @@ async def ingest_file(
     dataset.schema_snapshot = schema
     dataset.storage_path = storage_path
     dataset.source_type = SourceType.parquet.value  # store as parquet after ingestion
+    dataset.metadata_info = {
+        **(dataset.metadata_info or {}),
+        "pii_columns": pii_columns,
+        "pii_detected": bool(pii_columns),
+    }
 
     await db.flush()
     await db.refresh(dataset)
@@ -186,6 +195,87 @@ async def update_profile(
     dataset.profile_data = profile_data
     dataset.row_count = profile_data.get("row_count", dataset.row_count)
     dataset.column_count = profile_data.get("column_count", dataset.column_count)
+    await db.flush()
+    await db.refresh(dataset)
+    return dataset
+
+
+async def mask_detected_pii(
+    db: AsyncSession,
+    workspace_id: str,
+    dataset_id: str,
+) -> Dataset:
+    import pandas as pd
+
+    dataset = await get_dataset(db, workspace_id, dataset_id)
+    if not dataset.storage_path:
+        raise NotFoundException("Dataset file", dataset_id)
+
+    pii_columns = ((dataset.metadata_info or {}).get("pii_columns") or {})
+    if not isinstance(pii_columns, dict) or not pii_columns:
+        return dataset
+
+    data = await _download_from_minio(dataset.storage_path)
+    if dataset.storage_path.endswith(".parquet"):
+        df = pd.read_parquet(io.BytesIO(data))
+        original_format = "parquet"
+    else:
+        df = pd.read_csv(io.BytesIO(data))
+        original_format = "csv"
+
+    for column_name, pii_types in pii_columns.items():
+        if not isinstance(pii_types, list) or not pii_types:
+            continue
+        if column_name not in df.columns:
+            continue
+        # Apply first detected type per column for deterministic masking output
+        df = await _pii_detector.mask_column(df, str(column_name), str(pii_types[0]))
+
+    if original_format == "parquet":
+        out_buf = io.BytesIO()
+        df.to_parquet(out_buf, index=False)
+        masked_bytes = out_buf.getvalue()
+    else:
+        out_buf = io.StringIO()
+        df.to_csv(out_buf, index=False)
+        masked_bytes = out_buf.getvalue().encode("utf-8")
+
+    filename = dataset.storage_path.split("/")[-1] if dataset.storage_path else f"{dataset.name}.csv"
+    storage_path = await _upload_to_minio(
+        workspace_id=workspace_id,
+        dataset_id=dataset_id,
+        data=masked_bytes,
+        filename=filename,
+    )
+
+    dataset.storage_path = storage_path
+    dataset.row_count = len(df)
+    dataset.column_count = len(df.columns)
+    dataset.size_bytes = len(masked_bytes)
+    dataset.version = (dataset.version or 1) + 1
+    dataset.metadata_info = {
+        **(dataset.metadata_info or {}),
+        "pii_masked": True,
+    }
+    await db.flush()
+    await db.refresh(dataset)
+    return dataset
+
+
+async def acknowledge_pii(
+    db: AsyncSession,
+    workspace_id: str,
+    dataset_id: str,
+    user_id: str,
+) -> Dataset:
+    dataset = await get_dataset(db, workspace_id, dataset_id)
+    metadata_info = dataset.metadata_info or {}
+    acknowledged_by = metadata_info.get("pii_acknowledged_by") or []
+    if user_id not in acknowledged_by:
+        acknowledged_by.append(user_id)
+    metadata_info["pii_acknowledged_by"] = acknowledged_by
+    metadata_info["pii_acknowledged"] = True
+    dataset.metadata_info = metadata_info
     await db.flush()
     await db.refresh(dataset)
     return dataset

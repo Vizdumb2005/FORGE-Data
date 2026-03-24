@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from socketio import ASGIApp
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
@@ -17,6 +18,7 @@ from app.core.experiment_tracker import ExperimentTracker
 from app.core.kernel_manager import KernelManager
 from app.core.middleware import AuditMiddleware, RequestLoggingMiddleware
 from app.core.query_engine import FederatedQueryEngine
+from app.core.realtime import realtime_manager, sio
 from app.core.redis import close_redis, ping_redis
 from app.routers import (
     ai,
@@ -28,6 +30,7 @@ from app.routers import (
     execute,
     experiments,
     health,
+    lineage,
     publish,
     setup,
     users,
@@ -209,6 +212,15 @@ def create_app() -> FastAPI:
             ]
         }
 
+    @app.post(
+        "/api/v1/realtime/workspaces/{workspace_id}/cells/{cell_id}/executed",
+        tags=["realtime"],
+        summary="Broadcast executed cell output to realtime collaborators",
+    )
+    async def realtime_cell_executed(workspace_id: str, cell_id: str, payload: dict):
+        await realtime_manager.broadcast_cell_executed(workspace_id, cell_id, payload)
+        return {"status": "ok"}
+
     # ── Routers ────────────────────────────────────────────────────────────
     v1 = "/api/v1"
     app.include_router(health.router, prefix=v1, tags=["health"])
@@ -221,11 +233,14 @@ def create_app() -> FastAPI:
     app.include_router(ai.router, prefix=f"{v1}/ai", tags=["ai"])
     app.include_router(connectors.router, prefix=f"{v1}/connectors", tags=["connectors"])
     app.include_router(experiments.router, prefix=f"{v1}/experiments", tags=["experiments"])
+    app.include_router(lineage.router, prefix=v1, tags=["lineage"])
     app.include_router(publish.router, prefix=v1, tags=["publishing"])
-    app.include_router(audit.router, prefix=f"{v1}/audit", tags=["audit"])
+    app.include_router(audit.router, prefix=v1, tags=["audit"])
     app.include_router(setup.router, prefix=f"{v1}/setup", tags=["setup"])
 
     return app
 
 
-app = create_app()
+fastapi_app = create_app()
+app = ASGIApp(sio, other_asgi_app=fastapi_app)
+socket_app = app

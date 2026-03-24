@@ -16,12 +16,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/hooks/useWorkspace";
-import { useWorkspaceStore, type KernelStatus } from "@/lib/stores/workspaceStore";
+import { type KernelStatus } from "@/lib/stores/workspaceStore";
 import Canvas from "@/components/workspace/Canvas";
 import ChatPanel from "@/components/ai/ChatPanel";
 import PipelineBuilder from "@/components/ai/PipelineBuilder";
 import StatAdvisorPanel from "@/components/ai/StatAdvisorPanel";
 import SemanticLayerManager from "@/components/ai/SemanticLayerManager";
+import PresenceBar from "@/components/workspace/PresenceBar";
 import {
   Sheet,
   SheetContent,
@@ -33,6 +34,9 @@ import { listDatasets } from "@/lib/api/datasets";
 import type { Dataset } from "@/types";
 import PublishDashboardDialog from "@/components/workspace/PublishDashboardDialog";
 import ExportMenu from "@/components/workspace/ExportMenu";
+import LineageView from "@/components/workspace/LineageView";
+import { useAuthStore } from "@/lib/stores/authStore";
+import { getWorkspaceLineage, type WorkspaceLineageResponse } from "@/lib/api/lineage";
 
 // ── Kernel status colors ─────────────────────────────────────────────────────
 
@@ -70,10 +74,14 @@ export default function WorkspacePage() {
     syncContent,
     restartKernel,
     interruptKernel,
-    loading,
+    focusCell,
+    blurCell,
+    collaborators,
+    cursors,
+    lockedCells,
+    typingByCell,
   } = useWorkspace(id);
-
-  const fetchWorkspaces = useWorkspaceStore((s) => s.fetchWorkspaces);
+  const currentUser = useAuthStore((s) => s.user);
 
   // Set active workspace
   useEffect(() => {
@@ -89,6 +97,8 @@ export default function WorkspacePage() {
   const [statAdvisorOpen, setStatAdvisorOpen] = useState(false);
   const [semanticOpen, setSemanticOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [lineageOpen, setLineageOpen] = useState(false);
+  const [lineage, setLineage] = useState<WorkspaceLineageResponse | null>(null);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const resizing = useRef(false);
 
@@ -119,6 +129,11 @@ export default function WorkspacePage() {
     if (!id) return;
     void listDatasets(id).then(setDatasets).catch(() => setDatasets([]));
   }, [id]);
+
+  useEffect(() => {
+    if (!id || !lineageOpen) return;
+    void getWorkspaceLineage(id).then(setLineage).catch(() => setLineage({ nodes: [], edges: [] }));
+  }, [id, lineageOpen]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -167,6 +182,7 @@ export default function WorkspacePage() {
           <span className="text-[10px] text-forge-muted">
             {cellOrder.length} cell{cellOrder.length !== 1 ? "s" : ""}
           </span>
+          <PresenceBar users={collaborators} />
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -242,6 +258,13 @@ export default function WorkspacePage() {
           >
             <BookOpenCheck className="h-3.5 w-3.5" />
           </button>
+          <button
+            onClick={() => setLineageOpen(true)}
+            className="rounded-md p-1.5 text-forge-muted hover:text-foreground hover:bg-forge-border transition-colors"
+            title="Lineage"
+          >
+            <Workflow className="h-3.5 w-3.5" />
+          </button>
 
           {/* Toggle chat panel */}
           <button
@@ -266,7 +289,13 @@ export default function WorkspacePage() {
             onRunCell={runCell}
             onDeleteCell={deleteCell}
             onContentChange={syncContent}
-          />
+            onFocusCell={focusCell}
+              onBlurCell={blurCell}
+              lockedCells={lockedCells}
+              cursors={cursors}
+              typingByCell={typingByCell}
+              currentUserId={currentUser?.id ?? null}
+            />
         </div>
 
         {/* Resizable AI Chat Panel */}
@@ -316,6 +345,21 @@ export default function WorkspacePage() {
           </SheetHeader>
           <div className="p-4">
             <SemanticLayerManager workspaceId={id} datasets={datasets} />
+          </div>
+        </SheetContent>
+      </Sheet>
+      <Sheet open={lineageOpen} onOpenChange={setLineageOpen}>
+        <SheetContent side="right" className="w-[92vw] max-w-[92vw] p-0">
+          <div className="p-3">
+            <p className="mb-2 text-sm font-semibold text-foreground">Workspace Lineage</p>
+            {lineage ? (
+              <LineageView lineage={lineage} />
+            ) : (
+              <div className="flex h-[78vh] items-center justify-center text-sm text-forge-muted">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading lineage...
+              </div>
+            )}
           </div>
         </SheetContent>
       </Sheet>

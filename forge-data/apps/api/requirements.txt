@@ -4,6 +4,7 @@ uvicorn[standard]==0.32.0
 python-multipart==0.0.12
 websockets==13.1
 sse-starlette==2.1.3     # Server-Sent Events for streaming cell output
+python-socketio==5.11.4
 
 # ── Database ──────────────────────────────────────────────────────────────────
 sqlalchemy[asyncio]==2.0.36

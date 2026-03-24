@@ -1,59 +1,109 @@
-# Production overrides — apply with:
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
 services:
   web:
     build:
       context: ./apps/web
       dockerfile: ../../infra/docker/Dockerfile.web
-      target: production
+      target: runtime
     environment:
-      - NODE_ENV=production
-    restart: always
-    # Remove volume mounts in production (baked into image)
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
     volumes: []
+    ports: []
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
 
   api:
     build:
       context: ./apps/api
       dockerfile: ../../infra/docker/Dockerfile.api
-      target: production
+      target: runtime
     environment:
-      - APP_ENV=production
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
-    restart: always
+      APP_ENV: production
+    command: uvicorn app.main:socket_app --host 0.0.0.0 --port 8000 --workers 4
     volumes: []
-
-  jupyter:
-    environment:
-      - JUPYTER_TOKEN=${JUPYTER_TOKEN}
-    command: >
-      start-notebook.sh
-      --NotebookApp.token=${JUPYTER_TOKEN}
-    restart: always
-
-  mlflow:
-    restart: always
+    ports: []
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 2G
+        reservations:
+          cpus: "0.50"
+          memory: 512M
 
   postgres:
-    # In production, use a managed DB. This keeps the service but removes dev port exposure.
-    ports: []
-    restart: always
+    restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/docker/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 2G
+        reservations:
+          cpus: "0.25"
+          memory: 512M
 
   redis:
-    ports: []
-    restart: always
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.10"
+          memory: 128M
 
   minio:
-    # Keep object storage private to the internal network by default.
-    ports: []
-    restart: always
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  mlflow:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  jupyter:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 3G
+        reservations:
+          cpus: "0.50"
+          memory: 512M
 
   nginx:
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./infra/nginx/certs:/etc/nginx/certs:ro
-    restart: always
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          cpus: "0.10"
+          memory: 64M

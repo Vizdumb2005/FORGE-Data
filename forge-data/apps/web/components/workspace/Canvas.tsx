@@ -30,7 +30,7 @@ import {
   Grid3X3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useWorkspaceStore, type CellState } from "@/lib/stores/workspaceStore";
+import { useWorkspaceStore, type CellLockInfo, type CellState, type CollaboratorCursor } from "@/lib/stores/workspaceStore";
 import CellComponent from "./Cell";
 import type { CellType, CellLanguage } from "@/types";
 
@@ -41,9 +41,26 @@ interface CanvasProps {
   onRunCell: (cellId: string) => void;
   onDeleteCell: (cellId: string) => void;
   onContentChange: (cellId: string, content: string) => void;
+  onFocusCell?: (cellId: string) => void;
+  onBlurCell?: (cellId: string) => void;
+  lockedCells?: Record<string, CellLockInfo>;
+  cursors?: Record<string, CollaboratorCursor>;
+  typingByCell?: Record<string, { user_id: string; user_name: string; color: string; char_count: number; last_seen: number }>;
+  currentUserId?: string | null;
 }
 
-export default function Canvas({ workspaceId, onRunCell, onDeleteCell, onContentChange }: CanvasProps) {
+export default function Canvas({
+  workspaceId,
+  onRunCell,
+  onDeleteCell,
+  onContentChange,
+  onFocusCell,
+  onBlurCell,
+  lockedCells = {},
+  cursors = {},
+  typingByCell = {},
+  currentUserId = null,
+}: CanvasProps) {
   const cellStates = useWorkspaceStore((s) => s.cellStates);
   const cellOrder = useWorkspaceStore((s) => s.cellOrder);
   const activeCellId = useWorkspaceStore((s) => s.activeCellId);
@@ -147,6 +164,10 @@ export default function Canvas({ workspaceId, onRunCell, onDeleteCell, onContent
       return { id, y: cs.cell.position_y, type: cs.cell.cell_type };
     }).filter(Boolean) as { id: string; y: number; type: CellType }[];
   }, [cellOrder, cellStates]);
+  const cursorTags = useMemo(() => {
+    const now = Date.now();
+    return Object.values(cursors).filter((c) => c.user_id !== currentUserId && now - c.last_seen <= 3000);
+  }, [cursors, currentUserId]);
 
   return (
     <div className="relative h-full w-full bg-forge-bg overflow-hidden" ref={containerRef}>
@@ -172,6 +193,23 @@ export default function Canvas({ workspaceId, onRunCell, onDeleteCell, onContent
             className="mx-auto max-w-[900px] px-8 py-8"
             style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }}
           >
+            {cursorTags.map((cursor) => (
+              <div
+                key={cursor.user_id}
+                className="pointer-events-none absolute z-30 transition-all duration-300"
+                style={{
+                  top: ((cellOrder.indexOf(cursor.cell_id) + 1) * 70) || 24,
+                  left: 8,
+                }}
+              >
+                <span
+                  className="rounded-md px-2 py-0.5 text-[10px] font-medium text-forge-bg shadow"
+                  style={{ backgroundColor: cursor.color }}
+                >
+                  {cursor.user_name}
+                </span>
+              </div>
+            ))}
             {layoutMode === "list" ? (
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={cellOrder} strategy={verticalListSortingStrategy}>
@@ -197,6 +235,11 @@ export default function Canvas({ workspaceId, onRunCell, onDeleteCell, onContent
                             onDelete={onDeleteCell}
                             onContentChange={onContentChange}
                             onActivate={setActiveCellId}
+                            onFocusCell={onFocusCell}
+                            onBlurCell={onBlurCell}
+                            lockInfo={lockedCells[cellId]}
+                            typingIndicator={typingByCell[cellId]}
+                            currentUserId={currentUserId}
                           />
                         </div>
                       );
@@ -229,7 +272,12 @@ export default function Canvas({ workspaceId, onRunCell, onDeleteCell, onContent
                         onDelete={onDeleteCell}
                         onContentChange={onContentChange}
                         onActivate={setActiveCellId}
-                      />
+                        onFocusCell={onFocusCell}
+                         onBlurCell={onBlurCell}
+                         lockInfo={lockedCells[cellId]}
+                         typingIndicator={typingByCell[cellId]}
+                         currentUserId={currentUserId}
+                       />
                     </div>
                   );
                 })}
@@ -305,6 +353,11 @@ function SortableCell({
   onDelete,
   onContentChange,
   onActivate,
+  onFocusCell,
+  onBlurCell,
+  lockInfo,
+  typingIndicator,
+  currentUserId,
 }: {
   id: string;
   cellState: CellState;
@@ -314,6 +367,11 @@ function SortableCell({
   onDelete: (cellId: string) => void;
   onContentChange: (cellId: string, content: string) => void;
   onActivate: (cellId: string) => void;
+  onFocusCell?: (cellId: string) => void;
+  onBlurCell?: (cellId: string) => void;
+  lockInfo?: CellLockInfo;
+  typingIndicator?: { user_id: string; user_name: string; color: string; char_count: number; last_seen: number };
+  currentUserId?: string | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
@@ -334,6 +392,11 @@ function SortableCell({
         onDelete={onDelete}
         onContentChange={onContentChange}
         onActivate={onActivate}
+        onFocusCell={onFocusCell}
+        onBlurCell={onBlurCell}
+        lockInfo={lockInfo}
+        typingIndicator={typingIndicator}
+        currentUserId={currentUserId}
         dragListeners={listeners}
       />
     </div>

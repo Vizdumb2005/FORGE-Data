@@ -45,6 +45,7 @@ export default function DatasetsPage() {
   const [error, setError] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
+  const [lineageWorkspaceId, setLineageWorkspaceId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<string>("");
 
@@ -236,12 +237,23 @@ export default function DatasetsPage() {
           datasetId={selectedDatasetId}
           open={!!selectedDatasetId}
           onClose={() => setSelectedDatasetId(null)}
+          onOpenLineage={() => setLineageWorkspaceId(selectedWorkspaceId)}
           onDeleted={() => {
             setSelectedDatasetId(null);
             fetchDatasets();
           }}
         />
       )}
+      {lineageWorkspaceId ? (
+        <button
+          className="fixed bottom-4 right-4 rounded bg-forge-accent px-3 py-2 text-xs font-semibold text-forge-bg"
+          onClick={() => {
+            window.location.href = `/workspace/${lineageWorkspaceId}`;
+          }}
+        >
+          Open Workspace Lineage
+        </button>
+      ) : null}
     </div>
   );
 }
