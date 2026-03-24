@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/sheet";
 import { listDatasets } from "@/lib/api/datasets";
 import type { Dataset } from "@/types";
+import PublishDashboardDialog from "@/components/workspace/PublishDashboardDialog";
+import ExportMenu from "@/components/workspace/ExportMenu";
 
 // ── Kernel status colors ─────────────────────────────────────────────────────
 
@@ -57,6 +59,7 @@ export default function WorkspacePage() {
   const {
     activeWorkspace,
     workspaces,
+    cellStates,
     cellOrder,
     kernelStatus,
     isRunningAll,
@@ -85,6 +88,7 @@ export default function WorkspacePage() {
   const [pipelineOpen, setPipelineOpen] = useState(false);
   const [statAdvisorOpen, setStatAdvisorOpen] = useState(false);
   const [semanticOpen, setSemanticOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const resizing = useRef(false);
 
@@ -207,10 +211,13 @@ export default function WorkspacePage() {
           {/* Share */}
           <button
             className="rounded-md p-1.5 text-forge-muted hover:text-forge-text hover:bg-forge-border transition-colors"
-            title="Share workspace"
+            title="Publish dashboard"
+            onClick={() => setPublishOpen(true)}
           >
             <Share2 className="h-3.5 w-3.5" />
           </button>
+
+          <ExportMenu workspaceId={id} cellOrder={cellOrder} cellStates={cellStates} />
 
           <button
             onClick={() => setStatAdvisorOpen(true)}
@@ -289,6 +296,14 @@ export default function WorkspacePage() {
         workspaceId={id}
         open={pipelineOpen}
         onOpenChange={setPipelineOpen}
+      />
+
+      <PublishDashboardDialog
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+        workspaceId={id}
+        cellOrder={cellOrder}
+        cellStates={cellStates}
       />
 
       <Sheet open={semanticOpen} onOpenChange={setSemanticOpen}>

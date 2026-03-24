@@ -354,6 +354,53 @@ export interface ExperimentRun {
   created_at: string;
 }
 
+export interface MlflowExperiment {
+  experiment_id: string;
+  name: string;
+  artifact_location: string | null;
+  lifecycle_stage: string;
+}
+
+export interface MlflowRun {
+  run_id: string;
+  run_name: string;
+  status: string;
+  params: Record<string, string>;
+  metrics: Record<string, number>;
+  start_time: number | null;
+  duration: number | null;
+}
+
+export interface RegistryModelVersion {
+  version: string;
+  stage: string;
+  run_id: string | null;
+  source: string | null;
+}
+
+export interface RegistryModel {
+  name: string;
+  latest_versions: RegistryModelVersion[];
+}
+
+export interface PublishedDashboardInfo {
+  id: string;
+  slug: string;
+  title: string;
+  is_public: boolean;
+  refresh_interval_minutes: number | null;
+  created_at: string;
+}
+
+export interface ScheduledReportInfo {
+  id: string;
+  format: "html" | "pdf";
+  schedule: string;
+  delivery: Record<string, unknown>;
+  is_active: boolean;
+  created_at: string;
+}
+
 // ── Audit ─────────────────────────────────────────────────────────────────────
 
 export interface AuditLog {

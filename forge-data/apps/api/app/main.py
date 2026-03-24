@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.core.exceptions import ForgeException
+from app.core.experiment_tracker import ExperimentTracker
 from app.core.kernel_manager import KernelManager
 from app.core.middleware import AuditMiddleware, RequestLoggingMiddleware
 from app.core.query_engine import FederatedQueryEngine
@@ -27,12 +28,14 @@ from app.routers import (
     execute,
     experiments,
     health,
+    publish,
     setup,
     users,
     workspaces,
 )
 
 logger = logging.getLogger(__name__)
+_experiment_tracker = ExperimentTracker()
 
 logging.basicConfig(
     level=logging.DEBUG if settings.is_development else logging.INFO,
@@ -185,6 +188,27 @@ def create_app() -> FastAPI:
     async def root_health():
         return {"status": "ok", "version": app.version}
 
+    @app.get(
+        "/api/mlflow/experiments/list",
+        tags=["experiments"],
+        summary="MLflow experiments list compatibility endpoint",
+    )
+    async def mlflow_experiments_list_compat():
+        experiments = _experiment_tracker._client.search_experiments(max_results=1000)
+        return {
+            "experiments": [
+                {
+                    "experiment_id": exp.experiment_id,
+                    "name": exp.name,
+                    "artifact_location": exp.artifact_location,
+                    "lifecycle_stage": exp.lifecycle_stage,
+                    "creation_time": exp.creation_time,
+                    "last_update_time": exp.last_update_time,
+                }
+                for exp in experiments
+            ]
+        }
+
     # ── Routers ────────────────────────────────────────────────────────────
     v1 = "/api/v1"
     app.include_router(health.router, prefix=v1, tags=["health"])
@@ -197,6 +221,7 @@ def create_app() -> FastAPI:
     app.include_router(ai.router, prefix=f"{v1}/ai", tags=["ai"])
     app.include_router(connectors.router, prefix=f"{v1}/connectors", tags=["connectors"])
     app.include_router(experiments.router, prefix=f"{v1}/experiments", tags=["experiments"])
+    app.include_router(publish.router, prefix=v1, tags=["publishing"])
     app.include_router(audit.router, prefix=f"{v1}/audit", tags=["audit"])
     app.include_router(setup.router, prefix=f"{v1}/setup", tags=["setup"])
 

@@ -63,8 +63,25 @@ async def get_current_user(
     if payload is None:
         raise credentials_exc
 
-    user_id: str | None = payload.get("sub")
     token_type: str | None = payload.get("type")
+    user_id: str | None = payload.get("sub")
+
+    if token_type == "kernel":
+        workspace_id: str | None = payload.get("workspace_id")
+        if not workspace_id:
+            raise credentials_exc
+        from sqlalchemy import select
+
+        from app.models.workspace import Workspace
+
+        result = await db.execute(select(Workspace).where(Workspace.id == workspace_id))
+        workspace = result.scalar_one_or_none()
+        if workspace is None:
+            raise credentials_exc
+        user = await db.get(User, workspace.owner_id)
+        if user is None:
+            raise credentials_exc
+        return user
 
     if not user_id or token_type != "access":
         raise credentials_exc

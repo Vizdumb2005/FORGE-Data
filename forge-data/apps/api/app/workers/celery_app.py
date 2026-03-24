@@ -9,9 +9,7 @@ celery_app = Celery(
     broker=settings.redis_url,
     backend=settings.redis_url,
     include=[
-        "app.workers.tasks.execution",
-        "app.workers.tasks.datasets",
-        "app.workers.tasks.notifications",
+        "app.workers.tasks",
     ],
 )
 
@@ -27,9 +25,8 @@ celery_app.conf.update(
     result_expires=3600,  # 1 hour
     # Task routing — map task names to specific queues
     task_routes={
-        "app.workers.tasks.execution.*": {"queue": "execution"},
-        "app.workers.tasks.datasets.*": {"queue": "datasets"},
-        "app.workers.tasks.notifications.*": {"queue": "default"},
+        "app.workers.tasks.*": {"queue": "default"},
+        "app.workers.publish.*": {"queue": "default"},
     },
     # Worker concurrency defaults
     worker_prefetch_multiplier=1,  # one task at a time per worker process (fair scheduling)

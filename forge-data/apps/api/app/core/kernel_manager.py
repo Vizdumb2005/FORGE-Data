@@ -21,6 +21,7 @@ import websockets
 from app.config import settings
 from app.core.exceptions import JupyterUnavailableException
 from app.core.forge_helpers import build_bootstrap_code
+from app.core.security import create_kernel_token
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,8 @@ class KernelManager:
         # Use the internal API URL so the kernel (running inside Docker) calls
         # the API via the Docker network, not via the public-facing URL.
         api_base = settings.internal_api_url.rstrip("/")
-        code = build_bootstrap_code(api_base, workspace_id)
+        kernel_token = create_kernel_token(workspace_id)
+        code = build_bootstrap_code(api_base, workspace_id, kernel_token)
         # Execute silently (don't stream output)
         await self.execute_code(workspace_id, code, on_output=None)
 

@@ -8,6 +8,7 @@ from app.models.dataset_version import DatasetVersion
 from app.models.experiment import Experiment, ExperimentRun
 from app.models.metric import Metric
 from app.models.pipeline import Pipeline, PipelineRun, PipelineStatus, ScheduledPipeline
+from app.models.publishing import PublishedDashboard, ScheduledReport
 from app.models.user import LLMProvider, User
 from app.models.workspace import MemberRole, Workspace, WorkspaceMember
 
@@ -28,6 +29,8 @@ __all__ = [
     "Pipeline",
     "PipelineRun",
     "PipelineStatus",
+    "PublishedDashboard",
+    "ScheduledReport",
     "ScheduledPipeline",
     "SourceType",
     "User",

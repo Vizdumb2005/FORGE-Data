@@ -71,6 +71,19 @@ def create_refresh_token(data: dict[str, Any], jti: str | None = None) -> str:
     return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
+def create_kernel_token(workspace_id: str) -> str:
+    """Create a short-lived kernel token scoped to a workspace."""
+    expire = datetime.now(UTC) + timedelta(hours=12)
+    payload: dict[str, Any] = {
+        "sub": "forge-kernel",
+        "workspace_id": workspace_id,
+        "type": "kernel",
+        "exp": expire,
+        "jti": generate_jti(),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
 def verify_token(token: str) -> dict[str, Any] | None:
     """
     Decode and verify a JWT token.
