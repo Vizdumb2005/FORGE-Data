@@ -36,7 +36,7 @@ export const useAuthStore = create<AuthState & AuthActions>()(
             email,
             password,
           });
-          setTokens(resp.data.access_token, resp.data.refresh_token);
+          setTokens(resp.data.access_token);
           set((s) => {
             s.user = resp.data.user;
             s.loading = false;
@@ -64,8 +64,8 @@ export const useAuthStore = create<AuthState & AuthActions>()(
             payload
           );
           // Auto-login after successful registration
-          // RegisterResponse flattens all user fields + tokens at top level
-          setTokens(resp.data.access_token, resp.data.refresh_token);
+          // RegisterResponse flattens user fields + access token at top level
+          setTokens(resp.data.access_token);
           set((s) => {
             // Extract user fields from flattened response
             s.user = {

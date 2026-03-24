@@ -48,30 +48,41 @@ _quality_engine = DataQualityEngine()
 
 # ── SSRF guard — block requests to private/loopback/link-local ranges ─────────
 
-_PRIVATE_NETS = [
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("169.254.0.0/16"),  # link-local / cloud metadata
-    ipaddress.ip_network("::1/128"),
-    ipaddress.ip_network("fc00::/7"),
-]
+
+def _is_private_or_internal_ip(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_multicast
+        or addr.is_reserved
+        or addr.is_unspecified
+    )
 
 
 def _assert_safe_url(url: str) -> None:
     """Raise ValueError if *url* resolves to a private/internal IP address."""
     from urllib.parse import urlparse
+
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"Only http/https URLs are permitted, got: {parsed.scheme!r}")
     hostname = parsed.hostname or ""
     try:
-        addr = ipaddress.ip_address(socket.gethostbyname(hostname))
-    except (socket.gaierror, ValueError) as exc:
+        addr_info = socket.getaddrinfo(hostname, parsed.port or 80, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
         raise ValueError(f"Cannot resolve hostname: {hostname!r}") from exc
-    for net in _PRIVATE_NETS:
-        if addr in net:
+    seen_ips: set[ipaddress._BaseAddress] = set()
+    for _, _, _, _, sockaddr in addr_info:
+        raw_ip = sockaddr[0]
+        try:
+            addr = ipaddress.ip_address(raw_ip)
+        except ValueError as exc:
+            raise ValueError(f"Cannot parse resolved IP for hostname: {hostname!r}") from exc
+        if addr in seen_ips:
+            continue
+        seen_ips.add(addr)
+        if _is_private_or_internal_ip(addr):
             raise ValueError(f"URL resolves to a private/internal address: {addr}")
 
 
@@ -89,16 +100,18 @@ _MAGIC_BYTES: dict[str, bytes] = {
 def _validate_upload(filename: str, contents: bytes) -> str:
     """Validate extension and magic bytes. Returns the normalised extension."""
     if len(contents) > _MAX_UPLOAD_BYTES:
-        raise ValueError(f"File exceeds maximum allowed size of {_MAX_UPLOAD_BYTES // 1024 // 1024} MB")
+        raise ValueError(
+            f"File exceeds maximum allowed size of {_MAX_UPLOAD_BYTES // 1024 // 1024} MB"
+        )
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext not in _ALLOWED_EXTENSIONS:
-        raise ValueError(f"File type '.{ext}' is not allowed. Permitted: {sorted(_ALLOWED_EXTENSIONS)}")
+        raise ValueError(
+            f"File type '.{ext}' is not allowed. Permitted: {sorted(_ALLOWED_EXTENSIONS)}"
+        )
     magic = _MAGIC_BYTES.get(ext)
     if magic and not contents.startswith(magic):
         raise ValueError(f"File content does not match expected format for .{ext}")
     return ext
-
-
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -225,6 +238,7 @@ async def upload_dataset(
 
     # Validate extension and magic bytes; enforce size cap
     from fastapi import HTTPException as _HTTPException
+
     try:
         ext = _validate_upload(filename, contents)
     except ValueError as exc:
@@ -812,8 +826,9 @@ async def _test_sql_connection(config: ConnectionConfig) -> tuple[bool, str]:
             if config.database:
                 safe_msg = safe_msg.replace(config.database, "<database>")
             return False, safe_msg
-    except Exception as exc:
-        return False, str(exc)
+    except Exception:
+        logger.exception("SQL connector test failed")
+        return False, "Connection test failed"
 
 
 async def _test_rest_connection(config: ConnectionConfig) -> tuple[bool, str]:
@@ -823,8 +838,9 @@ async def _test_rest_connection(config: ConnectionConfig) -> tuple[bool, str]:
         async with httpx.AsyncClient(timeout=5) as client:
             r = await client.get(config.url, headers=config.headers or {})
             return r.is_success, f"HTTP {r.status_code}"
-    except Exception as exc:
-        return False, str(exc)
+    except Exception:
+        logger.exception("REST connector test failed")
+        return False, "Connection test failed"
 
 
 async def _test_s3_connection(config: ConnectionConfig) -> tuple[bool, str]:
@@ -840,8 +856,9 @@ async def _test_s3_connection(config: ConnectionConfig) -> tuple[bool, str]:
         s3 = boto3.client("s3", **kwargs)
         s3.head_bucket(Bucket=config.bucket or "")
         return True, "Bucket is accessible"
-    except Exception as exc:
-        return False, str(exc)
+    except Exception:
+        logger.exception("S3 connector test failed")
+        return False, "Connection test failed"
 
 
 async def _introspect_postgres(config: ConnectionConfig) -> list[TableInfo]:

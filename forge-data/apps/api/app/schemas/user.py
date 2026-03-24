@@ -111,7 +111,6 @@ class AuthResponse(BaseModel):
 
     user: UserRead
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
 
 
@@ -119,7 +118,6 @@ class RegisterResponse(UserRead):
     """Returned by /register endpoint — flattens user fields with tokens."""
 
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
 
 

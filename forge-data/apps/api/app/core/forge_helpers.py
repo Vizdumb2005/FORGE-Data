@@ -87,8 +87,6 @@ def build_bootstrap_code(
 
     Values are embedded using repr() to ensure correct Python string escaping.
     """
-    return (
-        BOOTSTRAP_CODE
-        .replace("\"__FORGE_API_BASE__\"", repr(api_base))
-        .replace("\"__FORGE_WORKSPACE_ID__\"", repr(workspace_id))
+    return BOOTSTRAP_CODE.replace('"__FORGE_API_BASE__"', repr(api_base)).replace(
+        '"__FORGE_WORKSPACE_ID__"', repr(workspace_id)
     )

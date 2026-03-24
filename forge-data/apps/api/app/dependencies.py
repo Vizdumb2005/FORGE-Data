@@ -87,6 +87,7 @@ async def get_current_user(
             raise  # re-raise credentials_exc from blacklist check
         except Exception as exc:
             from app.config import settings as _s
+
             if _s.is_production:
                 # Fail closed in production: Redis down = deny access
                 # This prevents revoked tokens from being reused during outages.

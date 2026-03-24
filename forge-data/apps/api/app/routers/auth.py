@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 provider_registry = ProviderRegistry()
+_GENERIC_PROVIDER_TEST_ERROR = "Provider test failed. Check configuration and connectivity."
 
 # ── Rate limiter (attached to the FastAPI app in main.py) ─────────────────────
 
@@ -131,8 +132,8 @@ async def register(
     user = await auth_service.create_user(db, payload)
     await db.flush()
 
-    auth_resp = await auth_service.build_auth_response(user)
-    _set_refresh_cookie(response, auth_resp.refresh_token)
+    auth_resp, refresh_token = await auth_service.build_auth_session(user)
+    _set_refresh_cookie(response, refresh_token)
     _set_access_cookie(response, auth_resp.access_token)
 
     background_tasks.add_task(_send_verification_email, user.email)
@@ -150,7 +151,6 @@ async def register(
     return RegisterResponse(
         **user_read.model_dump(),
         access_token=auth_resp.access_token,
-        refresh_token=auth_resp.refresh_token,
     )
 
 
@@ -172,8 +172,8 @@ async def login(
     response: Response,
 ) -> AuthResponse:
     user = await auth_service.authenticate_user(db, payload.email, payload.password)
-    auth_resp = await auth_service.build_auth_response(user)
-    _set_refresh_cookie(response, auth_resp.refresh_token)
+    auth_resp, refresh_token = await auth_service.build_auth_session(user)
+    _set_refresh_cookie(response, refresh_token)
     _set_access_cookie(response, auth_resp.access_token)
 
     await audit_service.log_event(
@@ -403,9 +403,7 @@ async def get_provider_config(current_user: CurrentUser) -> dict:
     provider_keys = current_user.llm_api_keys or {}
     provider_settings = current_user.llm_provider_config or {}
     global_settings = (
-        provider_settings.get("__settings__", {})
-        if isinstance(provider_settings, dict)
-        else {}
+        provider_settings.get("__settings__", {}) if isinstance(provider_settings, dict) else {}
     )
     if not isinstance(global_settings, dict):
         global_settings = {}
@@ -414,9 +412,7 @@ async def get_provider_config(current_user: CurrentUser) -> dict:
     for provider in providers:
         provider_id = provider["id"]
         p_settings = (
-            provider_settings.get(provider_id, {})
-            if isinstance(provider_settings, dict)
-            else {}
+            provider_settings.get(provider_id, {}) if isinstance(provider_settings, dict) else {}
         )
         if not isinstance(p_settings, dict):
             p_settings = {}
@@ -459,4 +455,11 @@ async def test_api_key(
     current_user: CurrentUser,
 ) -> ApiKeysTestResponse:
     result = await auth_service.test_api_key(current_user, payload.provider)
+    if result.get("error"):
+        logger.warning(
+            "Provider key test failed for provider=%s user=%s",
+            payload.provider,
+            current_user.id,
+        )
+        result["error"] = _GENERIC_PROVIDER_TEST_ERROR
     return ApiKeysTestResponse(**result)

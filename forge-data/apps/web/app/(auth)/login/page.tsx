@@ -1,8 +1,7 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -19,8 +18,11 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 function LoginForm() {
-  const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? undefined;
+  const [next, setNext] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const value = new URLSearchParams(window.location.search).get("next");
+    setNext(value && value.startsWith("/") ? value : undefined);
+  }, []);
 
   const { login, loading, clearError } = useAuth();
   const { toast } = useToast();
@@ -135,12 +137,10 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense>
-      <div className="container relative min-h-screen flex-col items-center justify-center grid lg:max-w-none lg:grid-cols-1 lg:px-0">
-        <div className="lg:p-8 flex items-center justify-center h-full w-full">
-          <LoginForm />
-        </div>
+    <div className="container relative min-h-screen flex-col items-center justify-center grid lg:max-w-none lg:grid-cols-1 lg:px-0">
+      <div className="lg:p-8 flex items-center justify-center h-full w-full">
+        <LoginForm />
       </div>
-    </Suspense>
+    </div>
   );
 }

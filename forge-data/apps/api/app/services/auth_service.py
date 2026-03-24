@@ -108,21 +108,25 @@ async def issue_tokens_with_redis(user: User) -> tuple[str, str]:
     return access_token, refresh_token
 
 
-async def build_auth_response(user: User) -> AuthResponse:
-    """Build the full auth response with tokens for /register and /login."""
+async def build_auth_session(user: User) -> tuple[AuthResponse, str]:
+    """Build auth response body and return refresh token for httpOnly cookie."""
     if settings.app_env == "test":
         # Skip Redis in test mode to avoid event loop issues with async test runners
         tokens = issue_tokens(user)
-        return AuthResponse(
-            user=UserRead.from_orm_with_flags(user),
-            access_token=tokens.access_token,
-            refresh_token=tokens.refresh_token,
+        return (
+            AuthResponse(
+                user=UserRead.from_orm_with_flags(user),
+                access_token=tokens.access_token,
+            ),
+            tokens.refresh_token,
         )
     access_token, refresh_token = await issue_tokens_with_redis(user)
-    return AuthResponse(
-        user=UserRead.from_orm_with_flags(user),
-        access_token=access_token,
-        refresh_token=refresh_token,
+    return (
+        AuthResponse(
+            user=UserRead.from_orm_with_flags(user),
+            access_token=access_token,
+        ),
+        refresh_token,
     )
 
 
@@ -274,7 +278,10 @@ async def test_api_key(user: User, provider: str) -> dict[str, Any]:
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(url, headers={"Authorization": f"Bearer {api_key}"})
-            return {"valid": resp.status_code == 200, "error": None if resp.status_code == 200 else f"HTTP {resp.status_code}"}
+            return {
+                "valid": resp.status_code == 200,
+                "error": None if resp.status_code == 200 else f"HTTP {resp.status_code}",
+            }
         except Exception as exc:
             return {"valid": False, "error": str(exc)}
 
@@ -326,7 +333,11 @@ async def _test_anthropic(api_key: str | None) -> dict[str, Any]:
                     "anthropic-version": "2023-06-01",
                     "content-type": "application/json",
                 },
-                json={"model": "claude-3-haiku-20240307", "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]},
+                json={
+                    "model": "claude-3-haiku-20240307",
+                    "max_tokens": 1,
+                    "messages": [{"role": "user", "content": "hi"}],
+                },
             )
         if resp.status_code in (200, 400):
             return {"valid": True, "error": None}

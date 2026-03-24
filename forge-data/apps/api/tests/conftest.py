@@ -10,14 +10,20 @@ Test database strategy:
 import os
 from collections.abc import AsyncGenerator
 
+import asyncpg
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # ── Override settings before importing anything from app ──────────────────────
+_PG_USER = os.getenv("POSTGRES_USER", "forge")
+_PG_PASSWORD = os.getenv("POSTGRES_PASSWORD", "forge")
+_PG_HOST = os.getenv("POSTGRES_HOST", "postgres")
+_PG_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
+_TEST_DB_NAME = os.getenv("POSTGRES_TEST_DB", "forge_test")
 _TEST_DB_URL = os.getenv(
     "DATABASE_URL_TEST",
-    "postgresql+asyncpg://forge:forge@postgres:5432/forge_test",
+    f"postgresql+asyncpg://{_PG_USER}:{_PG_PASSWORD}@{_PG_HOST}:{_PG_PORT}/{_TEST_DB_NAME}",
 )
 os.environ["DATABASE_URL"] = _TEST_DB_URL
 os.environ["APP_ENV"] = "test"
@@ -29,9 +35,35 @@ from app.database import Base  # noqa: E402
 from app.main import app  # noqa: E402
 
 
+def _quote_ident(identifier: str) -> str:
+    return '"' + identifier.replace('"', '""') + '"'
+
+
+async def _ensure_test_database() -> None:
+    conn = await asyncpg.connect(
+        host=_PG_HOST,
+        port=_PG_PORT,
+        user=_PG_USER,
+        password=_PG_PASSWORD,
+        database="postgres",
+    )
+    try:
+        exists = await conn.fetchval(
+            "SELECT 1 FROM pg_database WHERE datname = $1",
+            _TEST_DB_NAME,
+        )
+        if not exists:
+            await conn.execute(
+                f"CREATE DATABASE {_quote_ident(_TEST_DB_NAME)} OWNER {_quote_ident(_PG_USER)}"
+            )
+    finally:
+        await conn.close()
+
+
 @pytest_asyncio.fixture(scope="session", autouse=True, loop_scope="session")
 async def setup_database():
     """Re-create engine on the session event loop, create tables, then tear down."""
+    await _ensure_test_database()
     engine = create_async_engine(
         _TEST_DB_URL,
         echo=False,

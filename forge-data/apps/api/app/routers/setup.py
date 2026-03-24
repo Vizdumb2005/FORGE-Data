@@ -14,7 +14,7 @@ import logging
 import secrets
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select
@@ -68,15 +68,17 @@ class SetupInitResponse(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-_INSECURE = frozenset({
-    "change-me-in-production-use-openssl-rand-hex-32",
-    "CHANGE_ME_openssl_rand_hex_32",
-    "CHANGE_ME_openssl_rand_hex_16",
-    "forge_data_encryption_salt_v1",
-    "forge",
-    "forgedata123",
-    "",
-})
+_INSECURE = frozenset(
+    {
+        "change-me-in-production-use-openssl-rand-hex-32",
+        "CHANGE_ME_openssl_rand_hex_32",
+        "CHANGE_ME_openssl_rand_hex_16",
+        "forge_data_encryption_salt_v1",
+        "forge",
+        "forgedata123",
+        "",
+    }
+)
 
 
 def _secrets_are_weak() -> bool:
@@ -130,7 +132,9 @@ async def setup_status(db: DBSession) -> SetupStatusResponse:
     count: int = await db.scalar(select(func.count()).select_from(User)) or 0
     weak = _secrets_are_weak()
     return SetupStatusResponse(
-        needs_setup=count == 0 or weak,
+        # Setup is one-time only. Once a user exists, /initialize is permanently disabled.
+        # Keep weak-secret signal separate so UI can warn without forcing an impossible setup flow.
+        needs_setup=count == 0,
         has_users=count > 0,
         has_weak_secrets=weak,
     )
@@ -141,13 +145,27 @@ async def setup_status(db: DBSession) -> SetupStatusResponse:
     response_model=SetupInitResponse,
     summary="One-time first-run initialization — disabled after first user exists",
 )
-async def initialize(payload: SetupInitRequest, db: DBSession) -> SetupInitResponse:
+async def initialize(
+    payload: SetupInitRequest,
+    db: DBSession,
+    x_setup_token: str | None = Header(default=None, alias="X-Setup-Token"),
+) -> SetupInitResponse:
+    init_token = settings.setup_init_token.strip()
+    if init_token and (not x_setup_token or not secrets.compare_digest(x_setup_token, init_token)):
+        return JSONResponse(
+            status_code=401,
+            content={"ok": False, "message": "Unauthorized setup initialization request."},
+        )
+
     # Hard gate: refuse if any user already exists
     count: int = await db.scalar(select(func.count()).select_from(User)) or 0
     if count > 0:
         return JSONResponse(
             status_code=409,
-            content={"ok": False, "message": "Setup already completed. This endpoint is permanently disabled."},
+            content={
+                "ok": False,
+                "message": "Setup already completed. This endpoint is permanently disabled.",
+            },
         )
 
     # 1. Generate strong secrets server-side
@@ -184,11 +202,15 @@ async def initialize(payload: SetupInitRequest, db: DBSession) -> SetupInitRespo
     # 3. Create the admin user with the current (possibly just-written) settings
     #    We use the password hash directly — no need to reload settings for this.
     from zxcvbn import zxcvbn as _zxcvbn
+
     result = _zxcvbn(payload.admin_password)
     if result["score"] < 3:
         return JSONResponse(
             status_code=422,
-            content={"ok": False, "message": "Admin password is too weak. Use a stronger password (score 3/4+)."},
+            content={
+                "ok": False,
+                "message": "Admin password is too weak. Use a stronger password (score 3/4+).",
+            },
         )
 
     user = User(

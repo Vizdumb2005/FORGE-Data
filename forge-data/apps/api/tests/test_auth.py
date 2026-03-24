@@ -126,6 +126,24 @@ async def test_token_refresh(client: AsyncClient, registered_user: dict) -> None
     assert body["refresh_token"] is None
 
 
+async def test_login_json_does_not_expose_refresh_token(
+    client: AsyncClient, registered_user: dict
+) -> None:
+    """Login JSON response should not include refresh token (cookie-only)."""
+    client.cookies.clear()
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "testuser@example.com",
+            "password": "SecurePass12",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "access_token" in body
+    assert "refresh_token" not in body
+
+
 async def test_token_refresh_with_access_token_rejected(
     client: AsyncClient, auth_headers: dict
 ) -> None:

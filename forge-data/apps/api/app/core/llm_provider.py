@@ -193,7 +193,9 @@ class ProviderRegistry:
             return os.getenv(spec.api_key_env) or None
         return None
 
-    def resolve_base_url(self, user: User, spec: ProviderSpec, settings: dict[str, Any] | None = None) -> str | None:
+    def resolve_base_url(
+        self, user: User, spec: ProviderSpec, settings: dict[str, Any] | None = None
+    ) -> str | None:
         resolved_settings = settings or self.resolve_provider_settings(user, spec)
 
         # 1. User-saved setting (highest priority — respects what the user configured)
@@ -227,7 +229,9 @@ class LLMProvider:
         self.registry = ProviderRegistry()
         self._default_global_settings = {"timeout": 30, "retry_attempts": 3}
 
-    async def get_client(self, user: User, provider: str | None = None, model: str | None = None) -> LLMClient:
+    async def get_client(
+        self, user: User, provider: str | None = None, model: str | None = None
+    ) -> LLMClient:
         spec = self._select_provider(user, provider)
         settings = self.registry.resolve_provider_settings(user, spec)
         selected_model = model or str(settings.get("default_model") or spec.default_model)
@@ -520,14 +524,20 @@ class LLMProvider:
     def _resolve_fallback_order(self, global_settings: dict[str, Any]) -> list[str]:
         configured = global_settings.get("fallback_order")
         if isinstance(configured, list):
-            normalized = [str(item).lower() for item in configured if str(item).lower() in self.registry.providers]
+            normalized = [
+                str(item).lower()
+                for item in configured
+                if str(item).lower() in self.registry.providers
+            ]
             if normalized:
                 return normalized
         local_ids = [spec.provider_id for spec in self.registry.local_providers()]
         cloud_ids = [spec.provider_id for spec in self.registry.cloud_providers()]
         return [*local_ids, *cloud_ids]
 
-    def _validate_required_settings(self, spec: ProviderSpec, settings: dict[str, Any], base_url: str | None) -> None:
+    def _validate_required_settings(
+        self, spec: ProviderSpec, settings: dict[str, Any], base_url: str | None
+    ) -> None:
         missing: list[str] = []
         for required in spec.required_settings or []:
             if required == "base_url":

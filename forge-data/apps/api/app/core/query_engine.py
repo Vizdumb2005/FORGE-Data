@@ -216,9 +216,11 @@ class FederatedQueryEngine:
         username = _assert_safe_conn_value("username", config.get("username", ""))
         password = _assert_safe_conn_value("password", config.get("password", ""))
         schema_name = _assert_safe_conn_value("schema_name", config.get("schema_name", "public"))
+
         # Escape single quotes in credential values to prevent connection string injection
         def _esc(v: str) -> str:
             return str(v).replace("'", "''")
+
         conn_str = (
             f"host={_esc(host)} port={int(port)} dbname={_esc(database)} "
             f"user={_esc(username)} password={_esc(password)}"
@@ -242,8 +244,10 @@ class FederatedQueryEngine:
         database = _assert_safe_conn_value("database", config.get("database", ""))
         username = _assert_safe_conn_value("username", config.get("username", ""))
         password = _assert_safe_conn_value("password", config.get("password", ""))
+
         def _esc(v: str) -> str:
             return str(v).replace("'", "''")
+
         conn_str = (
             f"host={_esc(host)} port={int(port)} database={_esc(database)} "
             f"user={_esc(username)} password={_esc(password)}"

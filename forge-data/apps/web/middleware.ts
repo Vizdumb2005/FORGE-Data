@@ -39,10 +39,6 @@ export async function middleware(req: NextRequest) {
   const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
   const isAuthPath = AUTH_PATHS.some((p) => pathname.startsWith(p));
 
-  if (token && isAuthPath) {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
-  }
-
   if (!token && !isPublic) {
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("next", pathname);

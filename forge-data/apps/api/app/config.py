@@ -8,13 +8,15 @@ from functools import lru_cache
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_INSECURE_SECRETS = frozenset({
-    "change-me-in-production-use-openssl-rand-hex-32",
-    "test-secret-do-not-use-in-production-32-chars!!",
-    "CHANGE_ME_openssl_rand_hex_32",
-    "forge_data_encryption_salt_v1",
-    "CHANGE_ME_openssl_rand_hex_16",
-})
+_INSECURE_SECRETS = frozenset(
+    {
+        "change-me-in-production-use-openssl-rand-hex-32",
+        "test-secret-do-not-use-in-production-32-chars!!",
+        "CHANGE_ME_openssl_rand_hex_32",
+        "forge_data_encryption_salt_v1",
+        "CHANGE_ME_openssl_rand_hex_16",
+    }
+)
 _INSECURE_PASSWORDS = frozenset({"forge", "forgedata123", "CHANGE_ME_openssl_rand_hex_32"})
 
 
@@ -49,6 +51,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 15  # short-lived; refresh rotates it
     jwt_refresh_token_expire_days: int = 30
+    setup_init_token: str = ""
 
     # Encryption — IMPORTANT: set a unique value per deployment.
     # All deployments sharing the same salt + jwt_secret can decrypt each
@@ -104,7 +107,9 @@ class Settings(BaseSettings):
         if not self.jupyter_token or self.jupyter_token in _INSECURE_PASSWORDS:
             errors.append("JUPYTER_TOKEN must be set in production — run: openssl rand -hex 32")
         if errors:
-            raise ValueError("Production secret validation failed:\n" + "\n".join(f"  - {e}" for e in errors))
+            raise ValueError(
+                "Production secret validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+            )
         return self
 
     @field_validator("database_url", mode="before")
