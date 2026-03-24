@@ -235,6 +235,7 @@ async def log_model(
 ) -> dict[str, str]:
     await workspace_service.get_workspace(db, str(workspace_id), current_user.id)
     import pickle
+
     import cloudpickle
 
     try:

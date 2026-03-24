@@ -9,7 +9,7 @@ import tempfile
 from typing import Any, Literal
 
 import httpx
-from fastapi import APIRouter, Query, Request, UploadFile
+from fastapi import APIRouter, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -226,6 +226,7 @@ async def upload_dataset(
     db: DBSession,
     engine: QueryEngine,
     request: Request,
+    name: str | None = Form(default=None),
 ) -> DatasetWithProfile:
     """
     Accept multipart file upload (CSV, Excel, Parquet, JSON).
@@ -252,7 +253,8 @@ async def upload_dataset(
         "json": SourceType.json,
     }
     source_type = source_type_map.get(ext, SourceType.csv)
-    dataset_name = filename.rsplit(".", 1)[0] if "." in filename else filename
+    provided_name = (name or "").strip()
+    dataset_name = provided_name or (filename.rsplit(".", 1)[0] if "." in filename else filename)
 
     # Create Dataset record
     from app.schemas.dataset import DatasetCreate

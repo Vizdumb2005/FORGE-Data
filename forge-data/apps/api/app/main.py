@@ -7,9 +7,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from socketio import ASGIApp
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from socketio import ASGIApp
 from sqlalchemy import text
 
 from app.config import settings
@@ -230,6 +230,8 @@ def create_app() -> FastAPI:
     app.include_router(datasets.router, prefix=v1, tags=["datasets"])
     app.include_router(cells.router, prefix=f"{v1}/workspaces", tags=["cells"])
     app.include_router(execute.router, prefix=f"{v1}/workspaces", tags=["execute"])
+    # Backward-compatible execute prefix used by older clients/scripts.
+    app.include_router(execute.router, prefix=f"{v1}/execute/workspaces", tags=["execute"])
     app.include_router(ai.router, prefix=f"{v1}/ai", tags=["ai"])
     app.include_router(connectors.router, prefix=f"{v1}/connectors", tags=["connectors"])
     app.include_router(experiments.router, prefix=f"{v1}/experiments", tags=["experiments"])

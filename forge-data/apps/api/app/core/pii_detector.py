@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 import pandas as pd
 
@@ -15,7 +15,7 @@ class PIIDetector:
     Detection is sample-based (up to 1000 non-null values per column).
     """
 
-    PATTERNS: dict[str, re.Pattern[str]] = {
+    PATTERNS: ClassVar[dict[str, re.Pattern[str]]] = {
         "email": re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),
         "phone": re.compile(r"(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}"),
         "ssn": re.compile(r"\d{3}-\d{2}-\d{4}"),

@@ -22,13 +22,15 @@ oauth2_scheme_required = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", aut
 
 async def get_db() -> AsyncSession:  # type: ignore[return]
     """Yield an async SQLAlchemy session, committing on success or rolling back on error."""
-    async with _db_module.AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+    session = _db_module.AsyncSessionLocal()
+    try:
+        yield session
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        await session.close()
 
 
 # ── Settings dependency ────────────────────────────────────────────────────────

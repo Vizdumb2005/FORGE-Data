@@ -3,12 +3,12 @@
 import io
 from typing import Any
 
-from app.core.pii_detector import PIIDetector
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.exceptions import NotFoundException, ServiceUnavailableException
+from app.core.pii_detector import PIIDetector
 from app.core.security import decrypt_field, encrypt_field
 from app.models.dataset import Dataset, SourceType
 from app.schemas.dataset import DatasetCreate, DatasetPreview, DatasetUpdate

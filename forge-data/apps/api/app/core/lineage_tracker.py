@@ -1,8 +1,8 @@
 """Workspace lineage tracker for dataflow DAG generation."""
 
+import re
 from collections import deque
 from datetime import UTC, datetime, timedelta
-import re
 from typing import Any
 
 from sqlalchemy import delete, select
