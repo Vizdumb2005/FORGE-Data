@@ -44,7 +44,7 @@ Respond in JSON format with keys: test_name, assumptions, rationale, code, inter
             messages=[{"role": "user", "content": prompt}],
             system=self.ADVISOR_SYSTEM_PROMPT,
             stream=False,
-            max_tokens=1800,
+            max_tokens=600,
         )
         text = response if isinstance(response, str) else ""
         parsed = self._parse_json_response(text)

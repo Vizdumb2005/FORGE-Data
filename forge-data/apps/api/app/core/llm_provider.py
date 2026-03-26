@@ -433,6 +433,8 @@ class LLMProvider:
             "messages": [{"role": "system", "content": system}, *messages],
             "stream": stream,
             "options": options,
+            # Disable chain-of-thought thinking tokens so the response is clean output
+            "think": False,
         }
 
         if stream:
@@ -456,7 +458,8 @@ class LLMProvider:
             return _stream()
 
         try:
-            async with httpx.AsyncClient(timeout=120) as http_client:
+            # CPU inference can be very slow — use a generous timeout for non-streaming calls
+            async with httpx.AsyncClient(timeout=600) as http_client:
                 response = await http_client.post(f"{base_url}/api/chat", json=payload)
                 response.raise_for_status()
         except httpx.HTTPError as exc:
@@ -553,6 +556,10 @@ class LLMProvider:
             )
 
     def _validate_model(self, spec: ProviderSpec, model: str) -> None:
+        # Local providers (Ollama, llama.cpp, etc.) can have any locally-pulled model.
+        # Only enforce the static model list for cloud providers where the list is authoritative.
+        if spec.local:
+            return
         if model not in spec.models:
             raise ValidationError(
                 f"Model '{model}' is not available for provider '{spec.display_name}'. "

@@ -34,7 +34,7 @@ const DB_SOURCES: {
   { value: "snowflake", label: "Snowflake", icon: <Snowflake className="h-5 w-5" />, fields: ["account", "warehouse", "database", "username", "password", "schema_name", "table"] },
   { value: "s3", label: "Amazon S3", icon: <HardDrive className="h-5 w-5" />, fields: ["bucket", "prefix", "region", "aws_access_key", "aws_secret_key", "endpoint_url"] },
   { value: "mysql", label: "MySQL", icon: <Database className="h-5 w-5" />, fields: ["host", "port", "database", "username", "password"] },
-  { value: "bigquery", label: "BigQuery", icon: <Database className="h-5 w-5" />, disabled: true, fields: [] },
+  { value: "bigquery", label: "BigQuery", icon: <Database className="h-5 w-5" />, fields: ["project_id", "dataset_id", "table", "credentials_json"] },
 ];
 
 type Step = "choose" | "file" | "database" | "name" | "success";

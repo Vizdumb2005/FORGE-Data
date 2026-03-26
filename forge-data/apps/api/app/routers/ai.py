@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
+import httpx
 from fastapi import APIRouter, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -14,9 +16,10 @@ from sqlalchemy import select
 from app.core.code_generator import CodeGenerator, WorkspaceContext
 from app.core.exceptions import NotFoundException
 from app.core.llm_provider import LLMProvider, ProviderRegistry
-from app.core.pipeline_engine import AgenticPipelineEngine
+from app.core.realtime import realtime_manager
 from app.core.semantic_layer import SemanticLayer
 from app.core.stat_advisor import StatisticalAdvisor
+from app.core.pipeline_engine import AgenticPipelineEngine
 from app.dependencies import CurrentUser, DBSession, KernelMgr
 from app.models.cell import Cell
 from app.models.dataset import Dataset
@@ -43,6 +46,9 @@ class GenerateRequest(BaseModel):
     language: Literal["python", "sql", "r"] = "python"
     cell_id: str | None = None
     history: list[dict[str, str]] = Field(default_factory=list)
+    max_tokens: int = Field(default=2048, ge=64, le=8192)
+    # If True the backend creates a new cell and streams code directly into it
+    auto_cell: bool = False
 
 
 class FixErrorRequest(BaseModel):
@@ -50,12 +56,22 @@ class FixErrorRequest(BaseModel):
     error_output: str = Field(min_length=1)
     language: Literal["python", "sql", "r"] = "python"
     cell_id: str | None = None
+    max_tokens: int = Field(default=2048, ge=64, le=8192)
+
+
+class PatchRequest(BaseModel):
+    """Surgical in-place edit of an existing cell."""
+    cell_id: str = Field(min_length=1)
+    instruction: str = Field(min_length=1)
+    error_output: str | None = None
+    language: Literal["python", "sql", "r"] = "python"
 
 
 class ExplainRequest(BaseModel):
     code: str = Field(min_length=1)
     output: str = Field(min_length=1)
     language: Literal["python", "sql", "r"] = "python"
+    max_tokens: int = Field(default=1200, ge=64, le=8192)
 
 
 class SuggestRequest(BaseModel):
@@ -73,6 +89,7 @@ class ChatRequest(BaseModel):
     history: list[dict[str, str]] = Field(default_factory=list)
     provider: str | None = None
     model: str | None = None
+    max_tokens: int = Field(default=1500, ge=64, le=8192)
 
 
 class MetricCreateRequest(BaseModel):
@@ -91,6 +108,56 @@ async def list_providers(current_user: CurrentUser) -> list[dict[str, Any]]:
     return provider_registry.list_for_user(current_user)
 
 
+@router.get("/providers/{provider_id}/models", summary="Fetch live model list from a local provider")
+async def list_provider_models(provider_id: str, current_user: CurrentUser) -> dict[str, Any]:
+    """
+    Query a running local provider daemon for its installed/loaded models.
+
+    - ollama      → GET /api/tags
+    - openai_compatible (llama_cpp, gpt4all, vllm) → GET /v1/models
+    """
+    import os
+    from app.core.llm_provider import _normalise_base_url
+
+    spec = provider_registry.providers.get(provider_id)
+    if spec is None:
+        return {"models": [], "error": f"Unknown provider '{provider_id}'"}
+    if not spec.local:
+        return {"models": [], "error": f"'{provider_id}' is not a local provider"}
+
+    settings = provider_registry.resolve_provider_settings(current_user, spec)
+    base_url = provider_registry.resolve_base_url(current_user, spec, settings)
+
+    # Last-resort: fall back to env var then static default
+    if not base_url and spec.base_url_env:
+        raw = os.getenv(spec.base_url_env)
+        if raw:
+            base_url = _normalise_base_url(raw)
+    if not base_url and spec.base_url:
+        base_url = _normalise_base_url(spec.base_url)
+
+    if not base_url:
+        return {"models": [], "error": f"No base URL configured for '{provider_id}'"}
+
+    base_url = base_url.rstrip("/")
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            if spec.protocol == "ollama":
+                resp = await http.get(f"{base_url}/api/tags")
+                resp.raise_for_status()
+                model_names = [m["name"] for m in resp.json().get("models", [])]
+            else:
+                # OpenAI-compatible: llama.cpp, GPT4All, vLLM all expose /v1/models
+                resp = await http.get(f"{base_url}/v1/models")
+                resp.raise_for_status()
+                model_names = [m["id"] for m in resp.json().get("data", [])]
+
+            return {"models": model_names, "base_url": base_url}
+    except Exception as exc:
+        return {"models": [], "error": str(exc), "base_url": base_url}
+
+
 @router.post("/workspaces/{workspace_id}/generate", summary="Generate code from natural language")
 async def generate_code(
     workspace_id: str,
@@ -101,8 +168,34 @@ async def generate_code(
     await workspace_service.get_workspace(db, workspace_id, current_user.id)
     context = WorkspaceContext(workspace_id=workspace_id, db=db, metadata={"task": "generate_code"})
 
+    # Determine target cell — create one immediately if auto_cell is set
+    target_cell_id = payload.cell_id
+    if payload.auto_cell and not target_cell_id:
+        from app.models.cell import Cell as CellModel
+        import uuid as _uuid
+        new_cell = CellModel(
+            id=str(_uuid.uuid4()),
+            workspace_id=workspace_id,
+            cell_type="code" if payload.language != "sql" else "sql",
+            language=payload.language,
+            content="",
+            position_x=60,
+            position_y=9_999_999,
+            width=600,
+            height=320,
+            created_by=current_user.id,
+        )
+        db.add(new_cell)
+        await db.flush()
+        target_cell_id = new_cell.id
+
     async def stream() -> AsyncIterator[str]:
         full_chunks: list[str] = []
+
+        # Emit cell_created immediately so the frontend can scroll to it
+        if target_cell_id and payload.auto_cell:
+            yield _sse({"type": "cell_created", "cell_id": target_cell_id, "language": payload.language})
+
         try:
             async for chunk in code_generator.generate_code(
                 user=current_user,
@@ -110,25 +203,44 @@ async def generate_code(
                 language=payload.language,
                 workspace_context=context,
                 history=payload.history,
+                max_tokens=payload.max_tokens,
             ):
                 full_chunks.append(chunk)
                 yield _sse({"type": "token", "text": chunk})
 
             full_code = "".join(full_chunks)
-            if payload.cell_id:
-                await _update_cell_content(db, workspace_id, payload.cell_id, full_code)
-            yield _sse({"type": "complete", "full_code": full_code})
+            if target_cell_id:
+                await _update_cell_content(db, workspace_id, target_cell_id, full_code)
+
+            # Generate a brief summary of what was written
+            summary = ""
+            try:
+                summary = await code_generator.summarise_code(
+                    user=current_user,
+                    code=full_code,
+                    prompt=payload.prompt,
+                    language=payload.language,
+                )
+            except Exception:
+                pass
+
+            yield _sse({
+                "type": "complete",
+                "full_code": full_code,
+                "cell_id": target_cell_id,
+                "summary": summary,
+            })
         except Exception as exc:
             if _looks_like_provider_connectivity_issue(str(exc)):
                 fallback_code = _fallback_generated_code(payload.prompt, payload.language)
                 full_chunks.append(fallback_code)
                 yield _sse({"type": "token", "text": fallback_code})
-                if payload.cell_id:
-                    await _update_cell_content(db, workspace_id, payload.cell_id, fallback_code)
-                yield _sse({"type": "complete", "full_code": fallback_code})
+                if target_cell_id:
+                    await _update_cell_content(db, workspace_id, target_cell_id, fallback_code)
+                yield _sse({"type": "complete", "full_code": fallback_code, "cell_id": target_cell_id, "summary": ""})
                 return
             yield _sse({"type": "error", "text": str(exc)})
-            yield _sse({"type": "complete", "full_code": "".join(full_chunks)})
+            yield _sse({"type": "complete", "full_code": "".join(full_chunks), "cell_id": target_cell_id, "summary": ""})
 
     return _sse_response(stream())
 
@@ -154,6 +266,7 @@ async def fix_error(
                 error_output=payload.error_output,
                 language=payload.language,
                 workspace_context=context,
+                max_tokens=payload.max_tokens,
             ):
                 full_chunks.append(chunk)
                 yield _sse({"type": "token", "text": chunk})
@@ -165,6 +278,73 @@ async def fix_error(
         except Exception as exc:
             yield _sse({"type": "error", "text": str(exc)})
             yield _sse({"type": "complete", "full_code": "".join(full_chunks)})
+
+    return _sse_response(stream())
+
+
+@router.post(
+    "/workspaces/{workspace_id}/patch", summary="Surgically patch an existing cell in-place"
+)
+async def patch_cell(
+    workspace_id: str,
+    payload: PatchRequest,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> StreamingResponse:
+    """
+    Reads the current cell content, asks the model to apply a minimal targeted
+    change, streams the corrected code back into the same cell, and emits a
+    summary of what changed.
+    """
+    await workspace_service.get_workspace(db, workspace_id, current_user.id)
+
+    # Load the current cell content
+    result = await db.execute(
+        select(Cell).where(Cell.id == payload.cell_id, Cell.workspace_id == workspace_id)
+    )
+    cell = result.scalar_one_or_none()
+    if cell is None:
+        raise NotFoundException("Cell", payload.cell_id)
+
+    original_code = cell.content or ""
+    context = WorkspaceContext(workspace_id=workspace_id, db=db, metadata={"task": "patch"})
+
+    async def stream() -> AsyncIterator[str]:
+        full_chunks: list[str] = []
+        summary = ""
+        try:
+            async for chunk in code_generator.patch_code(
+                user=current_user,
+                original_code=original_code,
+                instruction=payload.instruction,
+                error_output=payload.error_output,
+                language=payload.language,
+                workspace_context=context,
+            ):
+                full_chunks.append(chunk)
+                yield _sse({"type": "token", "text": chunk})
+
+            full_text = "".join(full_chunks)
+
+            # Split off the trailing "# SUMMARY: ..." line the model appends
+            patched_code = full_text
+            for line in reversed(full_text.splitlines()):
+                stripped = line.strip()
+                if stripped.startswith("# SUMMARY:"):
+                    summary = stripped[len("# SUMMARY:"):].strip()
+                    patched_code = full_text[: full_text.rfind(line)].rstrip()
+                    break
+
+            await _update_cell_content(db, workspace_id, payload.cell_id, patched_code)
+            yield _sse({
+                "type": "complete",
+                "full_code": patched_code,
+                "cell_id": payload.cell_id,
+                "summary": summary or f"Applied: {payload.instruction}",
+            })
+        except Exception as exc:
+            yield _sse({"type": "error", "text": str(exc)})
+            yield _sse({"type": "complete", "full_code": "".join(full_chunks), "cell_id": payload.cell_id, "summary": ""})
 
     return _sse_response(stream())
 
@@ -188,6 +368,7 @@ async def explain_output(
                 code=payload.code,
                 output=payload.output,
                 language=payload.language,
+                max_tokens=payload.max_tokens,
             ):
                 full_chunks.append(chunk)
                 yield _sse({"type": "token", "text": chunk})
@@ -253,8 +434,17 @@ async def chat(
     )
     dataset_schemas = await _dataset_summaries(context)
     system_prompt = (
-        "You are FORGE Data's conversational analytics assistant. "
-        "Answer data questions clearly and concisely.\n\n"
+        "You are FORGE Data's conversational analytics assistant.\n"
+        "You are running INSIDE a full data science IDE with:\n"
+        "- Code cells (Python, SQL, R) that execute via Jupyter kernels\n"
+        "- Dataset ingestion, profiling, and preview\n"
+        "- An autonomous AI agent that can write code, run it, see errors, fix them, and loop\n"
+        "- Data connectors, experiment tracking, and publishing\n\n"
+        "IMPORTANT: If the user asks you to create code, run analysis, build a dashboard, "
+        "visualize data, or any task that requires CODE EXECUTION — tell them to use the "
+        "agent by rephrasing as a goal like 'Do a full analysis of this dataset'. "
+        "DO NOT say you cannot generate or run code. The platform CAN do everything.\n\n"
+        "For pure knowledge questions (what is a p-value, explain this output), answer clearly.\n\n"
         f"Workspace datasets:\n{dataset_schemas}"
     )
 
@@ -266,7 +456,7 @@ async def chat(
                 messages=messages,
                 system=system_prompt,
                 stream=True,
-                max_tokens=1500,
+                max_tokens=payload.max_tokens,
                 provider=payload.provider,
                 model=payload.model,
             )
@@ -382,23 +572,154 @@ async def run_pipeline(
     engine = AgenticPipelineEngine(db=db, kernel_mgr=kernel_mgr, code_generator=code_generator)
 
     async def stream() -> AsyncIterator[str]:
-        async def push(event: dict[str, Any]) -> None:
-            nonlocal queue
-            queue.append(event)
+        # Use a real async queue so events are yielded as they arrive,
+        # rather than buffered until run_pipeline() fully completes.
+        event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
 
-        queue: list[dict[str, Any]] = []
-        run = await engine.run_pipeline(
-            user=current_user,
-            workspace_id=workspace_id,
-            goal=payload.goal,
-            stream_updates=push,
-        )
-        for event in queue:
-            yield _sse(event)
-        if not any(item.get("type") == "complete" for item in queue):
-            yield _sse({"type": "complete", "full_report": run.full_report or ""})
+        async def push(event: dict[str, Any]) -> None:
+            await event_queue.put(event)
+
+        async def _run() -> None:
+            try:
+                await engine.run_pipeline(
+                    user=current_user,
+                    workspace_id=workspace_id,
+                    goal=payload.goal,
+                    stream_updates=push,
+                )
+            finally:
+                # Sentinel to signal the consumer that we are done
+                await event_queue.put(None)
+
+        task = asyncio.create_task(_run())
+        try:
+            emitted_complete = False
+            while True:
+                event = await event_queue.get()
+                if event is None:
+                    break
+                event_type = event.get("type")
+                # For the final report, also emit a token so SSE consumers
+                # (e.g. collect_sse) can capture the report text.
+                if event_type == "complete":
+                    report_text = event.get("full_report", "")
+                    if report_text:
+                        yield _sse({"type": "token", "text": report_text})
+                    yield _sse(event)
+                    emitted_complete = True
+                else:
+                    yield _sse(event)
+            if not emitted_complete:
+                yield _sse({"type": "complete", "full_report": ""})
+        except Exception:
+            task.cancel()
+            raise
 
     return _sse_response(stream())
+
+
+# Global engine for the workspace (singleton for simplicity in this demo)
+_agent_engine: AgenticPipelineEngine | None = None
+
+
+def get_agent_engine(db: AsyncSession, kernel_mgr: Any) -> AgenticPipelineEngine:
+    global _agent_engine
+    if _agent_engine is None:
+        _agent_engine = AgenticPipelineEngine(db=db, kernel_mgr=kernel_mgr, code_generator=code_generator)
+    else:
+        # Update references if they changed
+        _agent_engine.db = db
+        _agent_engine.kernel_mgr = kernel_mgr
+    return _agent_engine
+
+
+# --- API Agent Endpoints ---
+# POST /ai/workspaces/{wid}/agent - Autonomous AI agent (cell-aware loop)
+# ---
+
+
+class AgentRunRequest(BaseModel):
+    goal: str
+    max_steps: int = 5
+    provider: str | None = None
+    model: str | None = None
+
+
+@router.post(
+    "/workspaces/{workspace_id}/agent",
+    summary="Run autonomous AI agent - creates cells, executes, fixes errors in a loop",
+)
+async def run_agent(
+    workspace_id: str,
+    payload: AgentRunRequest,
+    current_user: CurrentUser,
+    db: DBSession,
+    kernel_mgr: KernelMgr,
+) -> StreamingResponse:
+    await workspace_service.get_workspace(db, workspace_id, current_user.id)
+    engine = get_agent_engine(db, kernel_mgr)
+
+    async def stream() -> AsyncIterator[str]:
+        event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+        async def push(event: dict[str, Any]) -> None:
+            await event_queue.put(event)
+
+        async def _run() -> None:
+            try:
+                await engine.run_pipeline(
+                    user=current_user,
+                    workspace_id=workspace_id,
+                    goal=payload.goal,
+                    stream_updates=push,
+                )
+            finally:
+                await event_queue.put(None)
+
+        task = asyncio.create_task(_run())
+        try:
+            while True:
+                event = await event_queue.get()
+                if event is None:
+                    break
+                event_type = event.get("type")
+                # Also emit token for legacy SSE consumers
+                if event_type == "complete":
+                    report_text = event.get("full_report", "")
+                    if report_text:
+                        yield _sse({"type": "token", "text": report_text})
+                yield _sse(event)
+        except Exception:
+            task.cancel()
+            raise
+
+    return _sse_response(stream())
+
+
+class AgentApprovalRequest(BaseModel):
+    approved: bool
+
+
+@router.post(
+    "/workspaces/{workspace_id}/agent/approve",
+    summary="Approve or deny a pending agent action (human-in-the-loop)",
+)
+async def approve_agent_action(
+    workspace_id: str,
+    payload: AgentApprovalRequest,
+    current_user: CurrentUser,
+    db: DBSession,
+    kernel_mgr: KernelMgr,
+) -> dict[str, Any]:
+    await workspace_service.get_workspace(db, workspace_id, current_user.id)
+    engine = get_agent_engine(db, kernel_mgr)
+    
+    queue = engine._approval_queues.get(workspace_id)
+    if not queue:
+        raise NotFoundException("PendingApproval", workspace_id)
+    
+    await queue.put(payload.approved)
+    return {"status": "ok", "workspace_id": workspace_id, "approved": payload.approved}
 
 
 @router.get("/workspaces/{workspace_id}/pipelines", summary="List pipeline runs")
@@ -536,3 +857,4 @@ async def _dataset_summaries(workspace_context: WorkspaceContext) -> str:
         col_names = ", ".join(str(col.get("name", "")) for col in columns)
         lines.append(f"- {dataset.name}: {col_names}")
     return "\n".join(lines)
+

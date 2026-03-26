@@ -195,7 +195,13 @@ class KernelManager:
         """Return the status of the workspace kernel."""
         entry = self._kernels.get(workspace_id)
         if not entry:
-            return {"status": "dead", "kernel_id": None}
+            kernel_id = await self._redis_get_kernel(workspace_id)
+            if kernel_id and await self._is_kernel_alive(kernel_id):
+                self._kernels[workspace_id] = (kernel_id, time.time())
+                entry = self._kernels[workspace_id]
+            else:
+                # Kernel has not been lazily created yet
+                return {"status": "idle", "kernel_id": None}
 
         kernel_id = entry[0]
         try:

@@ -75,7 +75,7 @@ export default function AuditPage() {
     if (!workspaceId) return;
     setLoading(true);
     void api
-      .get<AuditPageResponse>(`/api/v1/audit/workspaces/${workspaceId}/audit`, {
+      .get<AuditPageResponse>(`/api/v1/workspaces/${workspaceId}/audit`, {
         params: {
           page,
           limit,
@@ -147,8 +147,8 @@ export default function AuditPage() {
   const table = useReactTable({ data: items, columns, getCoreRowModel: getCoreRowModel() });
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-6 w-full max-w-6xl mx-auto space-y-4 overflow-x-hidden">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
           <Activity className="h-6 w-6 text-forge-accent" />
           Audit Log
@@ -157,7 +157,7 @@ export default function AuditPage() {
           variant="outline"
           size="sm"
           onClick={async () => {
-            const resp = await api.get(`/api/v1/audit/workspaces/${workspaceId}/audit/export`, {
+            const resp = await api.get(`/api/v1/workspaces/${workspaceId}/audit/export`, {
               params: {
                 user_id: userFilter === "all" ? undefined : userFilter,
                 action: actionFilter === "all" ? undefined : actionFilter,
@@ -180,14 +180,14 @@ export default function AuditPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <StatCard label="Total events" value={String(stats.total)} />
         <StatCard label="Unique users active" value={String(stats.uniqueUsers)} />
         <StatCard label="Most active user" value={stats.mostActiveUser} />
         <StatCard label="Most common action" value={stats.mostCommonAction} />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
         <Select value={workspaceId} onValueChange={setWorkspaceId}>
           <SelectTrigger><SelectValue placeholder="Workspace" /></SelectTrigger>
           <SelectContent>
@@ -215,14 +215,14 @@ export default function AuditPage() {
             {RESOURCE_OPTIONS.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
           </SelectContent>
         </Select>
-        <div className="flex gap-2">
-          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        <div className="flex gap-2 sm:col-span-2 lg:col-span-2">
+          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="min-w-0" />
+          <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="min-w-0" />
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-forge-border">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-lg border border-forge-border">
+        <table className="w-full min-w-[600px] text-sm">
           <thead className="bg-forge-surface">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
@@ -250,7 +250,7 @@ export default function AuditPage() {
                   {expanded[row.original.id] ? (
                     <tr className="border-t border-forge-border/30 bg-forge-bg/40">
                       <td className="px-3 py-2" colSpan={5}>
-                        <pre className="overflow-auto text-[11px] text-forge-muted">{JSON.stringify(row.original.metadata ?? {}, null, 2)}</pre>
+                        <pre className="overflow-auto max-h-48 text-[11px] text-forge-muted whitespace-pre-wrap break-all">{JSON.stringify(row.original.metadata ?? {}, null, 2)}</pre>
                       </td>
                     </tr>
                   ) : null}

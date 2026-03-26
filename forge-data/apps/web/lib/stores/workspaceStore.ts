@@ -53,6 +53,8 @@ interface WorkspaceState {
   cellOrder: string[];
   kernelStatus: KernelStatus;
   activeCellId: string | null;
+  /** ID of the cell currently receiving AI-streamed code (null when idle) */
+  streamingCellId: string | null;
   isRunningAll: boolean;
   zoom: number;
   collaborators: CollaboratorPresence[];
@@ -109,6 +111,9 @@ interface WorkspaceActions {
   // Zoom
   setZoom: (zoom: number) => void;
 
+  // AI streaming
+  setStreamingCellId: (id: string | null) => void;
+
   clearError: () => void;
 }
 
@@ -120,6 +125,7 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
     cellOrder: [],
     kernelStatus: "unknown",
     activeCellId: null,
+    streamingCellId: null,
     isRunningAll: false,
     zoom: 1,
     collaborators: [],
@@ -365,6 +371,8 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
     // ── Zoom ────────────────────────────────────────────────────────────
 
     setZoom: (zoom) => set((s) => { s.zoom = Math.max(0.5, Math.min(2, zoom)); }),
+
+    setStreamingCellId: (id) => set((s) => { s.streamingCellId = id; }),
 
     clearError: () => set((s) => { s.error = null; }),
   }))

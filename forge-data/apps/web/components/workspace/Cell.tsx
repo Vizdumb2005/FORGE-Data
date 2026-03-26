@@ -54,6 +54,8 @@ interface CellProps {
   cellState: CellState;
   workspaceId: string;
   isActive: boolean;
+  /** True when AI is actively streaming code into this cell */
+  isAiStreaming?: boolean;
   onRun: (cellId: string) => void;
   onDelete: (cellId: string) => void;
   onContentChange: (cellId: string, content: string) => void;
@@ -70,6 +72,7 @@ export default function CellComponent({
   cellState,
   workspaceId,
   isActive,
+  isAiStreaming = false,
   onRun,
   onDelete,
   onContentChange,
@@ -115,6 +118,7 @@ export default function CellComponent({
       className={cn(
         "group flex flex-col rounded-lg border bg-forge-surface shadow-lg transition-all duration-150 min-w-[400px]",
         isActive ? "border-forge-accent shadow-forge-accent/10 ring-1 ring-forge-accent/20" : "border-forge-border",
+        isAiStreaming ? "border-cyan-400 ring-2 ring-cyan-400/30 shadow-cyan-400/20" : "",
         lockedByOther ? "ring-1 ring-amber-400/40 opacity-85" : "",
         lockInfo && !lockedByOther ? "ring-1 ring-offset-0" : "",
         "hover:shadow-xl"
@@ -163,6 +167,14 @@ export default function CellComponent({
           >
             {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
           </button>
+
+          {/* AI streaming badge */}
+          {isAiStreaming && (
+            <span className="flex items-center gap-1 rounded-full bg-cyan-500/15 px-1.5 py-0.5 text-[10px] text-cyan-300">
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              AI writing…
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1">

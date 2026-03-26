@@ -14,6 +14,7 @@ from app.routers import (
     publish,
     setup,
     users,
+    workflows,
     workspaces,
 )
 
@@ -31,5 +32,6 @@ __all__ = [
     "publish",
     "setup",
     "users",
+    "workflows",
     "workspaces",
 ]

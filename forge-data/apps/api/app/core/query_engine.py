@@ -163,6 +163,7 @@ class FederatedQueryEngine:
             "mysql": self._register_mysql,
             "s3": self._register_s3_parquet,
             "snowflake": self._register_snowflake,
+            "bigquery": self._register_bigquery,
         }.get(source_type)
 
         if register_fn is None:
@@ -340,6 +341,38 @@ class FederatedQueryEngine:
                     conn.execute(f'CREATE OR REPLACE TABLE "{name}" AS ' "SELECT * FROM df")
             finally:
                 sf_conn.close()
+
+        await asyncio.to_thread(_do)
+
+    async def _register_bigquery(
+        self, conn: duckdb.DuckDBPyConnection, name: str, config: dict[str, Any]
+    ) -> None:
+        """Register a BigQuery source."""
+        project_id = config.get("project_id", "")
+        dataset_id = config.get("dataset_id", "")
+        table = config.get("table", "")
+        credentials_json = config.get("credentials", "")
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_.]*$", table):
+            raise ValueError(f"Invalid BigQuery table identifier: {table!r}")
+
+        def _do() -> None:
+            import json
+            from google.cloud import bigquery
+            from google.oauth2 import service_account
+
+            if credentials_json:
+                try:
+                    creds_info = json.loads(credentials_json)
+                    credentials = service_account.Credentials.from_service_account_info(creds_info)
+                    client = bigquery.Client(project=project_id, credentials=credentials)
+                except Exception:
+                    client = bigquery.Client(project=project_id)
+            else:
+                client = bigquery.Client(project=project_id)
+
+            query = f"SELECT * FROM `{project_id}.{dataset_id}.{table}`"
+            df = client.query(query).to_dataframe()
+            conn.execute(f'CREATE OR REPLACE TABLE "{name}" AS SELECT * FROM df')
 
         await asyncio.to_thread(_do)
 

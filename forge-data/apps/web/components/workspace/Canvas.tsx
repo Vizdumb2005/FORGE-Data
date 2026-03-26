@@ -64,6 +64,7 @@ export default function Canvas({
   const cellStates = useWorkspaceStore((s) => s.cellStates);
   const cellOrder = useWorkspaceStore((s) => s.cellOrder);
   const activeCellId = useWorkspaceStore((s) => s.activeCellId);
+  const streamingCellId = useWorkspaceStore((s) => s.streamingCellId);
   const zoom = useWorkspaceStore((s) => s.zoom);
   const setActiveCellId = useWorkspaceStore((s) => s.setActiveCellId);
   const setZoom = useWorkspaceStore((s) => s.setZoom);
@@ -231,6 +232,7 @@ export default function Canvas({
                             cellState={cs}
                             workspaceId={workspaceId}
                             isActive={activeCellId === cellId}
+                            isAiStreaming={streamingCellId === cellId}
                             onRun={onRunCell}
                             onDelete={onDeleteCell}
                             onContentChange={onContentChange}
@@ -268,6 +270,7 @@ export default function Canvas({
                         cellState={cs}
                         workspaceId={workspaceId}
                         isActive={activeCellId === cellId}
+                        isAiStreaming={streamingCellId === cellId}
                         onRun={onRunCell}
                         onDelete={onDeleteCell}
                         onContentChange={onContentChange}
@@ -349,6 +352,7 @@ function SortableCell({
   cellState,
   workspaceId,
   isActive,
+  isAiStreaming,
   onRun,
   onDelete,
   onContentChange,
@@ -363,6 +367,7 @@ function SortableCell({
   cellState: CellState;
   workspaceId: string;
   isActive: boolean;
+  isAiStreaming?: boolean;
   onRun: (cellId: string) => void;
   onDelete: (cellId: string) => void;
   onContentChange: (cellId: string, content: string) => void;
@@ -388,6 +393,7 @@ function SortableCell({
         cellState={cellState}
         workspaceId={workspaceId}
         isActive={isActive}
+        isAiStreaming={isAiStreaming}
         onRun={onRun}
         onDelete={onDelete}
         onContentChange={onContentChange}

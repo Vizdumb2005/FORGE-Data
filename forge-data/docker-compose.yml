@@ -10,7 +10,6 @@ services:
     volumes:
       - ./apps/web:/app
       - /app/node_modules
-      - /app/.next
     environment:
       - NODE_ENV=development
       - API_URL=http://api:8000
@@ -46,6 +45,48 @@ services:
     networks:
       - forge-net
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips='127.0.0.1,10.0.0.0/8,172.16.0.0/12'
+    restart: unless-stopped
+
+  celery-worker:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      target: development
+    volumes:
+      - ./apps/api:/app
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    networks:
+      - forge-net
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
+    restart: unless-stopped
+
+  celery-beat:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      target: development
+    volumes:
+      - ./apps/api:/app
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    networks:
+      - forge-net
+    command: celery -A app.workers.celery_app beat --loglevel=info
     restart: unless-stopped
 
   # ── Jupyter Kernel Gateway ────────────────────────────────────────────────

@@ -72,6 +72,7 @@ Workspace context: {workspace_context}"""
         language: str,
         workspace_context: WorkspaceContext,
         history: list[dict[str, str]] | None = None,
+        max_tokens: int = 2048,
     ) -> AsyncIterator[str]:
         dataset_schemas = await self._dataset_schemas(workspace_context)
         system_prompt = self._system_prompt(language, dataset_schemas, workspace_context)
@@ -87,6 +88,7 @@ Workspace context: {workspace_context}"""
             messages=messages,
             system=system_prompt,
             stream=True,
+            max_tokens=max_tokens,
         )
         if isinstance(result, str):
             yield result
@@ -101,6 +103,7 @@ Workspace context: {workspace_context}"""
         error_output: str,
         language: str,
         workspace_context: WorkspaceContext,
+        max_tokens: int = 2048,
     ) -> AsyncIterator[str]:
         fix_prompt = (
             "This code produced this error. Fix it and return only corrected code.\n\n"
@@ -113,7 +116,95 @@ Workspace context: {workspace_context}"""
             prompt=fix_prompt,
             language=language,
             workspace_context=workspace_context,
+            max_tokens=max_tokens,
         ):
+            yield chunk
+
+    async def patch_code(
+        self,
+        user: User,
+        original_code: str,
+        instruction: str,
+        error_output: str | None,
+        language: str,
+        workspace_context: WorkspaceContext,
+    ) -> AsyncIterator[str]:
+        """
+        Surgical patch: ask the model to return the FULL corrected file but
+        only change what is necessary to satisfy the instruction / fix the error.
+        Also streams a JSON summary event at the end so the caller can show
+        a human-readable description of what changed.
+        """
+        context_block = ""
+        if error_output:
+            context_block = f"\nError output to fix:\n{error_output}\n"
+
+        patch_system = (
+            "You are a precise code editor. "
+            "The user will give you existing code and an instruction. "
+            "Return the COMPLETE corrected file — do NOT omit any lines. "
+            "Change only what is necessary. "
+            "After the code, on a new line write exactly:\n"
+            "# SUMMARY: <one sentence describing what you changed>\n"
+            "No markdown fences, no extra commentary."
+        )
+        prompt = (
+            f"Language: {language}\n\n"
+            f"Existing code:\n{original_code}\n"
+            f"{context_block}\n"
+            f"Instruction: {instruction}"
+        )
+        async for chunk in self._stream_complete(
+            user=user,
+            prompt=prompt,
+            system=patch_system,
+            workspace_context=workspace_context,
+        ):
+            yield chunk
+
+    async def summarise_code(
+        self,
+        user: User,
+        code: str,
+        prompt: str,
+        language: str,
+    ) -> str:
+        """Return a one-sentence plain-English summary of what the generated code does."""
+        result = await self.llm_provider.complete(
+            user=user,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"In one sentence, describe what this {language} code does "
+                        f"in the context of the user's request: '{prompt}'.\n\n"
+                        f"Code:\n{code}"
+                    ),
+                }
+            ],
+            system="You are a concise technical writer. Reply with a single sentence only.",
+            stream=False,
+            max_tokens=120,
+        )
+        return result if isinstance(result, str) else ""
+
+    async def _stream_complete(
+        self,
+        user: User,
+        prompt: str,
+        system: str,
+        workspace_context: WorkspaceContext,
+    ) -> AsyncIterator[str]:
+        result = await self.llm_provider.complete(
+            user=user,
+            messages=[{"role": "user", "content": prompt}],
+            system=system,
+            stream=True,
+        )
+        if isinstance(result, str):
+            yield result
+            return
+        async for chunk in result:
             yield chunk
 
     async def explain_output(
@@ -122,6 +213,7 @@ Workspace context: {workspace_context}"""
         code: str,
         output: str,
         language: str,
+        max_tokens: int = 1200,
     ) -> AsyncIterator[str]:
         prompt = (
             "Explain what this output means in plain English.\n\n"
@@ -134,7 +226,7 @@ Workspace context: {workspace_context}"""
             messages=[{"role": "user", "content": prompt}],
             system="You are a clear and concise data analysis explainer.",
             stream=True,
-            max_tokens=1200,
+            max_tokens=max_tokens,
         )
         if isinstance(result, str):
             yield result

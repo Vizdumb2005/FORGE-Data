@@ -11,6 +11,19 @@ from app.models.metric import Metric
 from app.models.pipeline import Pipeline, PipelineRun, PipelineStatus, ScheduledPipeline
 from app.models.publishing import PublishedDashboard, ScheduledReport
 from app.models.user import LLMProvider, User
+from app.models.workflow import (
+    Workflow,
+    WorkflowEdge,
+    WorkflowEdgeCondition,
+    WorkflowNode,
+    WorkflowNodeRun,
+    WorkflowNodeRunStatus,
+    WorkflowNodeType,
+    WorkflowRun,
+    WorkflowRunStatus,
+    WorkflowRunTriggeredBy,
+    WorkflowTriggerType,
+)
 from app.models.workspace import MemberRole, Workspace, WorkspaceMember
 
 __all__ = [
@@ -37,6 +50,17 @@ __all__ = [
     "ScheduledReport",
     "SourceType",
     "User",
+    "Workflow",
+    "WorkflowEdge",
+    "WorkflowEdgeCondition",
+    "WorkflowNode",
+    "WorkflowNodeRun",
+    "WorkflowNodeRunStatus",
+    "WorkflowNodeType",
+    "WorkflowRun",
+    "WorkflowRunStatus",
+    "WorkflowRunTriggeredBy",
+    "WorkflowTriggerType",
     "Workspace",
     "WorkspaceMember",
 ]

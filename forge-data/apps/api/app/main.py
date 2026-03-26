@@ -34,6 +34,7 @@ from app.routers import (
     publish,
     setup,
     users,
+    workflows,
     workspaces,
 )
 
@@ -236,6 +237,11 @@ def create_app() -> FastAPI:
     app.include_router(connectors.router, prefix=f"{v1}/connectors", tags=["connectors"])
     app.include_router(experiments.router, prefix=f"{v1}/experiments", tags=["experiments"])
     app.include_router(lineage.router, prefix=v1, tags=["lineage"])
+    app.include_router(
+        workflows.router,
+        prefix=f"{v1}/workspaces/{{workspace_id}}/workflows",
+        tags=["workflows"],
+    )
     app.include_router(publish.router, prefix=v1, tags=["publishing"])
     app.include_router(audit.router, prefix=v1, tags=["audit"])
     app.include_router(setup.router, prefix=f"{v1}/setup", tags=["setup"])
