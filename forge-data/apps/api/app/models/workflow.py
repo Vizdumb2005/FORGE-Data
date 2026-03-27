@@ -86,6 +86,7 @@ class Workflow(Base):
     trigger_type: Mapped[str] = mapped_column(
         String(32), default=WorkflowTriggerType.manual.value, nullable=False
     )
+    trigger_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     webhook_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False),

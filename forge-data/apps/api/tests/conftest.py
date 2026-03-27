@@ -8,6 +8,7 @@ Test database strategy:
 """
 
 import os
+import socket
 import warnings
 from collections.abc import AsyncGenerator
 
@@ -18,6 +19,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module="crypt")
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="pydantic._internal")
 
 import asyncpg
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -28,6 +30,22 @@ _PG_PASSWORD = os.getenv("POSTGRES_PASSWORD", "forge")
 _PG_HOST = os.getenv("POSTGRES_HOST", "postgres")
 _PG_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
 _TEST_DB_NAME = os.getenv("POSTGRES_TEST_DB", "forge_test")
+
+
+def _resolve_postgres_host() -> str:
+    candidates = [os.getenv("POSTGRES_HOST", "postgres"), "localhost", "127.0.0.1"]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            socket.getaddrinfo(candidate, _PG_PORT)
+            return candidate
+        except OSError:
+            continue
+    return os.getenv("POSTGRES_HOST", "postgres")
+
+
+_PG_HOST = _resolve_postgres_host()
 _TEST_DB_URL = os.getenv(
     "DATABASE_URL_TEST",
     f"postgresql+asyncpg://{_PG_USER}:{_PG_PASSWORD}@{_PG_HOST}:{_PG_PORT}/{_TEST_DB_NAME}",
@@ -47,13 +65,19 @@ def _quote_ident(identifier: str) -> str:
 
 
 async def _ensure_test_database() -> None:
-    conn = await asyncpg.connect(
-        host=_PG_HOST,
-        port=_PG_PORT,
-        user=_PG_USER,
-        password=_PG_PASSWORD,
-        database="postgres",
-    )
+    try:
+        conn = await asyncpg.connect(
+            host=_PG_HOST,
+            port=_PG_PORT,
+            user=_PG_USER,
+            password=_PG_PASSWORD,
+            database="postgres",
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            f"PostgreSQL is unavailable at host '{_PG_HOST}:{_PG_PORT}'. "
+            "Set POSTGRES_HOST/POSTGRES_PORT to a reachable test database."
+        ) from exc
     try:
         exists = await conn.fetchval(
             "SELECT 1 FROM pg_database WHERE datname = $1",
@@ -70,7 +94,10 @@ async def _ensure_test_database() -> None:
 @pytest_asyncio.fixture(scope="session", autouse=True, loop_scope="session")
 async def setup_database():
     """Re-create engine on the session event loop, create tables, then tear down."""
-    await _ensure_test_database()
+    try:
+        await _ensure_test_database()
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
     engine = create_async_engine(
         _TEST_DB_URL,
         echo=False,

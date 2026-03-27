@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.event_bus import event_bus
 from app.core.exceptions import NotFoundException, ServiceUnavailableException
 from app.models.dataset import Dataset
 from app.models.dataset_version import DatasetVersion
@@ -76,6 +77,16 @@ class DataVersionManager:
         dataset.schema_snapshot = schema
 
         await db.flush()
+        await event_bus.publish(
+            "dataset.version_created",
+            {
+                "workspace_id": workspace_id,
+                "dataset_id": dataset_id,
+                "version_number": next_version,
+                "created_by": user_id,
+                "message": message,
+            },
+        )
         logger.info(
             "Created version %d for dataset %s (%d rows)",
             next_version,

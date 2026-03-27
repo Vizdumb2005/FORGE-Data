@@ -89,6 +89,7 @@ def trigger_scheduled_workflows() -> dict:
                     triggered_by=WorkflowRunTriggeredBy.schedule.value,
                     triggered_by_user_id=None,
                     run_metadata={"workspace_id": workflow.workspace_id, "scheduled_at": now_utc.isoformat()},
+                    trigger_payload={"scheduled_at": now_utc.isoformat()},
                 )
                 triggered += 1
         return {"triggered": triggered}

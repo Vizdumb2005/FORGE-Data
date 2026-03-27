@@ -16,6 +16,7 @@ class WorkflowCreate(BaseModel):
         default="manual",
         pattern="^(manual|schedule|dataset_event|webhook)$",
     )
+    trigger_config: dict[str, Any] = Field(default_factory=dict)
     webhook_secret: str | None = None
 
 
@@ -29,6 +30,7 @@ class WorkflowUpdate(BaseModel):
         default=None,
         pattern="^(manual|schedule|dataset_event|webhook)$",
     )
+    trigger_config: dict[str, Any] | None = None
     webhook_secret: str | None = None
 
 
@@ -146,6 +148,7 @@ class WorkflowSchema(BaseModel):
     schedule_cron: str | None
     schedule_timezone: str
     trigger_type: str
+    trigger_config: dict[str, Any]
     webhook_secret: str | None
     created_by: str | None
     created_at: datetime

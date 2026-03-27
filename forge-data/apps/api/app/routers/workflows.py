@@ -18,6 +18,7 @@ from app.core.exceptions import (
     NotFoundException,
     ValidationError,
 )
+from app.core.workflow_templates import get_workflow_templates, instantiate_template
 from app.core.workflow_engine import OrionEngine
 from app.dependencies import CurrentUser, DBSession
 from app.models.workflow import (
@@ -52,94 +53,6 @@ router = APIRouter()
 engine = OrionEngine()
 
 
-def _workflow_templates() -> list[dict[str, Any]]:
-    return [
-        {
-            "key": "daily_sql_report",
-            "name": "Daily SQL + Email Report",
-            "description": "Run SQL then send email.",
-            "workflow": {
-                "trigger_type": WorkflowTriggerType.schedule.value,
-                "schedule_cron": "0 9 * * *",
-                "schedule_timezone": "UTC",
-                "nodes": [
-                    {
-                        "node_type": "sql_query",
-                        "label": "Run SQL",
-                        "config": {"sql": "SELECT 1 AS ok", "output_table_name": "daily_report"},
-                        "position_x": 120,
-                        "position_y": 120,
-                    },
-                    {
-                        "node_type": "email_notify",
-                        "label": "Notify Team",
-                        "config": {
-                            "to": [],
-                            "subject": "FORGE Daily Report",
-                            "body_template": "Workflow complete. Outputs: {{ outputs }}",
-                        },
-                        "position_x": 420,
-                        "position_y": 120,
-                    },
-                ],
-                "edges": [{"from": 0, "to": 1, "condition": "on_success"}],
-            },
-        },
-        {
-            "key": "dataset_ingest_validate",
-            "name": "Dataset Upload + Validate",
-            "description": "Upload dataset and run SQL validation.",
-            "workflow": {
-                "trigger_type": WorkflowTriggerType.manual.value,
-                "nodes": [
-                    {
-                        "node_type": "dataset_upload",
-                        "label": "Upload Dataset",
-                        "config": {"dataset_id": "", "file_url": "", "version_message": "Orion ingest"},
-                    },
-                    {
-                        "node_type": "sql_query",
-                        "label": "Validate Upload",
-                        "config": {"sql": "SELECT COUNT(*) AS row_count FROM dataset", "dataset_id": ""},
-                    },
-                ],
-                "edges": [{"from": 0, "to": 1, "condition": "on_success"}],
-            },
-        },
-        {
-            "key": "api_conditional_wait",
-            "name": "API + Conditional + Wait",
-            "description": "Call API, evaluate branch, then wait.",
-            "workflow": {
-                "trigger_type": WorkflowTriggerType.schedule.value,
-                "schedule_cron": "*/30 * * * *",
-                "nodes": [
-                    {"node_type": "api_call", "label": "Fetch API", "config": {"method": "GET", "url": ""}},
-                    {"node_type": "conditional", "label": "Check Status", "config": {"expression": "True"}},
-                    {"node_type": "wait", "label": "Wait", "config": {"seconds": 30}},
-                ],
-                "edges": [
-                    {"from": 0, "to": 1, "condition": "on_success"},
-                    {"from": 1, "to": 2, "condition": "on_success"},
-                ],
-            },
-        },
-        {
-            "key": "retrain_publish",
-            "name": "Retrain + Publish",
-            "description": "Retrain model then publish dashboard.",
-            "workflow": {
-                "trigger_type": WorkflowTriggerType.manual.value,
-                "nodes": [
-                    {"node_type": "model_retrain", "label": "Retrain", "config": {"experiment_id": ""}},
-                    {"node_type": "dashboard_publish", "label": "Publish", "config": {"dashboard_id": ""}},
-                ],
-                "edges": [{"from": 0, "to": 1, "condition": "on_success"}],
-            },
-        },
-    ]
-
-
 async def _get_workflow(db: DBSession, workspace_id: str, workflow_id: str) -> Workflow:
     result = await db.execute(
         select(Workflow)
@@ -155,7 +68,7 @@ async def _get_workflow(db: DBSession, workspace_id: str, workflow_id: str) -> W
 @router.get("/templates", response_model=list[dict[str, Any]], summary="Built-in templates")
 async def templates(workspace_id: str, current_user: CurrentUser, db: DBSession) -> list[dict[str, Any]]:
     await workspace_service.get_workspace(db, workspace_id, current_user.id)
-    return _workflow_templates()
+    return get_workflow_templates()
 
 
 @router.post("/from-template", response_model=WorkflowDetailSchema, status_code=201)
@@ -166,9 +79,7 @@ async def from_template(
     db: DBSession,
 ) -> WorkflowDetailSchema:
     await workspace_service.check_workspace_role(db, workspace_id, current_user.id, ("editor", "admin"))
-    template = {t["key"]: t for t in _workflow_templates()}.get(payload.template_key)
-    if template is None:
-        raise NotFoundException("WorkflowTemplate", payload.template_key)
+    template = instantiate_template(payload.template_key, payload.config_overrides or {})
 
     wf = template["workflow"]
     workflow = Workflow(
@@ -176,11 +87,10 @@ async def from_template(
         name=payload.name,
         description=payload.description or template["description"],
         is_active=True,
-        schedule_cron=(payload.config_overrides or {}).get("schedule_cron", wf.get("schedule_cron")),
-        schedule_timezone=(payload.config_overrides or {}).get(
-            "schedule_timezone", wf.get("schedule_timezone", "UTC")
-        ),
-        trigger_type=(payload.config_overrides or {}).get("trigger_type", wf.get("trigger_type", "manual")),
+        schedule_cron=wf.get("schedule_cron"),
+        schedule_timezone=wf.get("schedule_timezone", "UTC"),
+        trigger_type=wf.get("trigger_type", "manual"),
+        trigger_config=wf.get("trigger_config", {}),
         webhook_secret=(payload.config_overrides or {}).get("webhook_secret"),
         created_by=current_user.id,
     )
@@ -189,6 +99,7 @@ async def from_template(
 
     nodes: list[WorkflowNode] = []
     node_ids: list[str] = []
+    alias_by_type: dict[str, str] = {}
     for node_template in wf.get("nodes", []):
         node = WorkflowNode(
             workflow_id=workflow.id,
@@ -202,6 +113,13 @@ async def from_template(
         await db.flush()
         nodes.append(node)
         node_ids.append(node.id)
+        alias_by_type.setdefault(node.node_type, node.id)
+
+    for node in nodes:
+        cfg = dict(node.config or {})
+        if "expression" in cfg and isinstance(cfg["expression"], str):
+            cfg["expression"] = cfg["expression"].replace("{{sql_node_id}}", alias_by_type.get("sql_query", ""))
+        node.config = cfg
 
     edges: list[WorkflowEdge] = []
     for edge_template in wf.get("edges", []):
@@ -256,6 +174,7 @@ async def webhook(
             "webhook_received_at": datetime.now(UTC).isoformat(),
             **payload,
         },
+        trigger_payload=payload,
     )
     return WorkflowRunSchema.model_validate(run)
 
@@ -474,6 +393,7 @@ async def trigger(
         triggered_by=WorkflowRunTriggeredBy.manual.value,
         triggered_by_user_id=current_user.id,
         run_metadata={"workspace_id": workspace_id, **payload.run_metadata},
+        trigger_payload=payload.run_metadata,
     )
     return WorkflowRunSchema.model_validate(run)
 

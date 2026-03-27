@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.event_bus import event_bus
 from app.core.exceptions import NotFoundException, ServiceUnavailableException
 from app.models.data_quality import DataQualityReport, DataQualityRuleset
 from app.models.dataset import Dataset
@@ -93,6 +94,17 @@ class DataQualityEngine:
         )
         db.add(report)
         await db.flush()
+        await event_bus.publish(
+            "dataset.quality_check_passed" if failed == 0 else "dataset.quality_check_failed",
+            {
+                "workspace_id": workspace_id,
+                "dataset_id": dataset_id,
+                "report_id": report.id,
+                "passed": passed,
+                "failed": failed,
+                "created_by": user_id,
+            },
+        )
 
         logger.info(
             "Quality check on dataset %s: %d passed, %d failed",

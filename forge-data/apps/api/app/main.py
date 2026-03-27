@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.core.exceptions import ForgeException
+from app.core.event_bus import event_bus
 from app.core.experiment_tracker import ExperimentTracker
 from app.core.kernel_manager import KernelManager
 from app.core.middleware import AuditMiddleware, RequestLoggingMiddleware
@@ -128,12 +129,14 @@ async def lifespan(app: FastAPI):
 
     cleanup_task = asyncio.create_task(_idle_cleanup_loop())
     kernel_cleanup_task = asyncio.create_task(_kernel_cleanup_loop())
+    event_bus_task = asyncio.create_task(event_bus.subscribe_and_dispatch())
 
     yield
 
     # Shutdown
     cleanup_task.cancel()
     kernel_cleanup_task.cancel()
+    event_bus_task.cancel()
     await kernel_manager.shutdown_all()
     await query_engine.close_all()
     await close_redis()

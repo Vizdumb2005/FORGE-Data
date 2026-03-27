@@ -16,9 +16,11 @@ from jinja2 import Template
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.core.experiment_tracker import ExperimentTracker
 from app.core.query_engine import FederatedQueryEngine
 from app.core.security import create_kernel_token
+from app.core.ws import ws_manager
 from app.database import AsyncSessionLocal
 from app.models.cell import Cell
 from app.models.dataset import Dataset
@@ -40,6 +42,16 @@ logger = logging.getLogger(__name__)
 
 
 def _send_orion_execute_node(workflow_run_id: str, node_id: str, run_context: dict[str, Any]) -> None:
+    if settings.app_env == "test":
+        try:
+            asyncio.get_running_loop().create_task(
+                OrionEngine().execute_node(workflow_run_id, node_id, run_context)
+            )
+            return
+        except RuntimeError:
+            asyncio.run(OrionEngine().execute_node(workflow_run_id, node_id, run_context))
+            return
+
     from app.workers.celery_app import celery_app
 
     celery_app.send_task(
@@ -56,8 +68,10 @@ class OrionEngine:
         triggered_by: str,
         triggered_by_user_id: str | None,
         run_metadata: dict[str, Any] | None = None,
+        trigger_payload: dict[str, Any] | None = None,
     ) -> WorkflowRun:
         metadata = run_metadata or {}
+        payload = trigger_payload or {}
         async with AsyncSessionLocal() as db:
             workflow = await self._load_workflow(db, workflow_id)
             if not workflow.nodes:
@@ -93,12 +107,27 @@ class OrionEngine:
             await db.refresh(run)
 
         dispatch_context = {
-            "workflow_run_id": run.id,
             "workflow_id": workflow_id,
-            "workspace_id": metadata.get("workspace_id"),
+            "run_id": run.id,
+            "triggered_by": triggered_by,
+            "trigger_payload": payload,
+            "workspace_id": workflow.workspace_id,
+            "outputs": {},
+            "workflow_run_id": run.id,
             "triggered_by_user_id": triggered_by_user_id,
             "run_metadata": metadata,
         }
+        await self._broadcast_workflow_event(
+            workflow.workspace_id,
+            {
+                "type": "workflow_run_started",
+                "data": {
+                    "workflow_id": workflow_id,
+                    "run_id": run.id,
+                    "triggered_by": triggered_by,
+                },
+            },
+        )
         for entry in entry_nodes:
             _send_orion_execute_node(run.id, entry.id, dispatch_context)
         return run
@@ -134,6 +163,20 @@ class OrionEngine:
             await db.flush()
             await db.commit()
 
+        workspace_id = str(ctx.get("workspace_id") or "")
+        if workspace_id:
+            await self._broadcast_workflow_event(
+                workspace_id,
+                {
+                    "type": "node_status_change",
+                    "data": {
+                        "workflow_id": ctx.get("workflow_id"),
+                        "run_id": workflow_run_id,
+                        "node_id": node_id,
+                        "status": WorkflowNodeRunStatus.running.value,
+                    },
+                },
+            )
         return await self._execute_with_retries(workflow_run_id, node_id, ctx)
 
     async def _execute_with_retries(
@@ -169,6 +212,13 @@ class OrionEngine:
                     await db.flush()
                     await db.commit()
 
+                await self._broadcast_node_status(
+                    run_context,
+                    workflow_run_id,
+                    node_id,
+                    WorkflowNodeRunStatus.success.value,
+                    output=result,
+                )
                 await self._dispatch_successors(workflow_run_id, node_id, run_context)
                 await self._finalize_run_if_complete(workflow_run_id)
                 return {"status": "success", "output": result}
@@ -201,6 +251,13 @@ class OrionEngine:
             await db.flush()
             await db.commit()
 
+        await self._broadcast_node_status(
+            run_context,
+            workflow_run_id,
+            node_id,
+            WorkflowNodeRunStatus.failed.value,
+            error=error_message,
+        )
         await self._finalize_run_if_complete(workflow_run_id)
         return {"status": "failed", "error": error_message}
 
@@ -230,8 +287,8 @@ class OrionEngine:
                 raise ValueError(f"Unsupported node_type '{node.node_type}'")
 
             result = await dispatch(node, ctx)
-            outputs = ctx.setdefault("node_outputs", {})
-            outputs[node.id] = result
+            outputs = ctx.setdefault("outputs", {})
+            outputs[str(node.id)] = result
             return result
 
     async def _execute_code_cell(self, node: WorkflowNode, ctx: dict[str, Any]) -> dict[str, Any]:
@@ -367,7 +424,7 @@ class OrionEngine:
         to_list = node.config.get("to") or []
         subject = str(node.config.get("subject", "FORGE Orion Notification"))
         template_text = str(node.config.get("body_template", ""))
-        rendered = Template(template_text).render(run_context=ctx, outputs=ctx.get("node_outputs", {}))
+        rendered = Template(template_text).render(run_context=ctx, outputs=ctx.get("outputs", {}))
 
         smtp_host = str(ctx.get("smtp_host") or "")
         smtp_port = int(ctx.get("smtp_port") or 587)
@@ -410,7 +467,7 @@ class OrionEngine:
         scope = {
             "__builtins__": safe_builtins,
             "run_context": ctx,
-            "outputs": ctx.get("node_outputs", {}),
+            "outputs": ctx.get("outputs", {}),
             "bool": bool,
         }
         local_vars: dict[str, Any] = {}
@@ -420,7 +477,8 @@ class OrionEngine:
     async def _execute_wait(self, node: WorkflowNode, ctx: dict[str, Any]) -> dict[str, Any]:
         seconds = int(node.config.get("seconds", 0))
         await asyncio.sleep(max(0, seconds))
-        return {"waited_seconds": max(0, seconds)}
+        passthrough = {k: v for k, v in node.config.items() if k != "seconds"}
+        return {"waited_seconds": max(0, seconds), **passthrough}
 
     async def _execute_model_retrain(self, node: WorkflowNode, ctx: dict[str, Any]) -> dict[str, Any]:
         experiment_id = str(node.config.get("experiment_id", "")).strip()
@@ -433,7 +491,7 @@ class OrionEngine:
             workspace_id=workspace_id or "orion",
             experiment_name=f"workflow_{experiment_id}",
             run_name=f"orion_retrain_{node.id[:8]}",
-            tags={"orion.node_id": node.id, "orion.workflow_run_id": ctx.get("workflow_run_id", "")},
+            tags={"orion.node_id": node.id, "orion.workflow_run_id": ctx.get("run_id", "")},
         )
         await tracker.log_params(run_id, parameters)
         await tracker.end_run(run_id, status="FINISHED")
@@ -613,6 +671,7 @@ class OrionEngine:
             run = await db.get(WorkflowRun, workflow_run_id)
             if run is None:
                 return
+            workflow = await db.get(Workflow, run.workflow_id)
             result = await db.execute(
                 select(WorkflowNodeRun).where(WorkflowNodeRun.workflow_run_id == workflow_run_id)
             )
@@ -636,6 +695,27 @@ class OrionEngine:
                 run.error_message = None
             await db.flush()
             await db.commit()
+            workflow_id = run.workflow_id
+            run_id = run.id
+            status = run.status
+            if workflow and run.finished_at and run.started_at:
+                duration_seconds = (run.finished_at - run.started_at).total_seconds()
+            else:
+                duration_seconds = None
+            workspace_id = workflow.workspace_id if workflow else None
+        if workspace_id:
+            await self._broadcast_workflow_event(
+                workspace_id,
+                {
+                    "type": "workflow_run_completed",
+                    "data": {
+                        "workflow_id": workflow_id,
+                        "run_id": run_id,
+                        "status": status,
+                        "duration_seconds": duration_seconds,
+                    },
+                },
+            )
 
     async def _load_workflow(self, db, workflow_id: str) -> Workflow:
         result = await db.execute(
@@ -734,3 +814,30 @@ class OrionEngine:
             )
             last = last_result.scalar_one_or_none()
             return count, last
+
+    async def _broadcast_workflow_event(self, workspace_id: str, message: dict[str, Any]) -> None:
+        await ws_manager.broadcast_to_workspace(workspace_id, message)
+
+    async def _broadcast_node_status(
+        self,
+        run_context: dict[str, Any],
+        run_id: str,
+        node_id: str,
+        status: str,
+        output: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> None:
+        workspace_id = str(run_context.get("workspace_id") or "")
+        if not workspace_id:
+            return
+        data: dict[str, Any] = {
+            "workflow_id": run_context.get("workflow_id"),
+            "run_id": run_id,
+            "node_id": node_id,
+            "status": status,
+        }
+        if output is not None:
+            data["output"] = output
+        if error is not None:
+            data["error"] = error
+        await self._broadcast_workflow_event(workspace_id, {"type": "node_status_change", "data": data})

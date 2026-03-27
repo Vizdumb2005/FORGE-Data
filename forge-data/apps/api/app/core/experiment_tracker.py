@@ -14,6 +14,7 @@ from mlflow import MlflowClient
 from mlflow.entities import ViewType
 
 from app.config import settings
+from app.core.event_bus import event_bus
 from app.core.exceptions import ServiceUnavailableException
 
 
@@ -128,6 +129,17 @@ class ExperimentTracker:
 
     async def end_run(self, run_id: str, status: str = "FINISHED") -> None:
         self._client.set_terminated(run_id=run_id, status=status.upper())
+        run = self._client.get_run(run_id)
+        workspace_id = run.data.tags.get("forge.workspace_id")
+        await event_bus.publish(
+            "experiment.run_completed",
+            {
+                "workspace_id": workspace_id or "",
+                "run_id": run_id,
+                "status": status.upper(),
+                "experiment_name": run.data.tags.get("forge.experiment_name"),
+            },
+        )
 
     async def list_experiments(self, workspace_id: UUID | str) -> list[dict[str, Any]]:
         prefix = f"forge_{workspace_id}_"

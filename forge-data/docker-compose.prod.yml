@@ -39,6 +39,44 @@ services:
           cpus: "0.50"
           memory: 512M
 
+  celery-worker:
+    build:
+      context: ./apps/api
+      dockerfile: ../../infra/docker/Dockerfile.api
+      target: runtime
+    environment:
+      APP_ENV: production
+    volumes: []
+    ports: []
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.00"
+          memory: 2G
+        reservations:
+          cpus: "0.50"
+          memory: 512M
+
+  celery-beat:
+    build:
+      context: ./apps/api
+      dockerfile: ../../infra/docker/Dockerfile.api
+      target: runtime
+    environment:
+      APP_ENV: production
+    volumes: []
+    ports: []
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
   postgres:
     restart: unless-stopped
     volumes:

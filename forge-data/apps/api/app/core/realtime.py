@@ -246,6 +246,9 @@ class RealtimeManager:
             room=self.room_name(workspace_id),
         )
 
+    async def broadcast_to_workspace(self, workspace_id: str, event: str, payload: dict[str, Any]) -> None:
+        await sio.emit(event, payload, room=self.room_name(workspace_id))
+
     def _schedule_debounced_save(self, workspace_id: str, cell_id: str, user_id: str, content: str) -> None:
         task = self._save_task_by_cell.get(cell_id)
         if task is not None and not task.done():
