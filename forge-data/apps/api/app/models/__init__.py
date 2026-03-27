@@ -2,6 +2,7 @@
 
 from app.models.audit_log import AuditLog
 from app.models.cell import Cell, CellLanguage, CellType
+from app.models.collaboration import WorkspaceChat, WorkspaceChatContentType, WorkspaceComment
 from app.models.data_quality import DataQualityReport, DataQualityRuleset
 from app.models.dataset import Dataset, SourceType
 from app.models.dataset_version import DatasetVersion
@@ -31,6 +32,9 @@ __all__ = [
     "Cell",
     "CellLanguage",
     "CellType",
+    "WorkspaceComment",
+    "WorkspaceChat",
+    "WorkspaceChatContentType",
     "DataQualityReport",
     "DataQualityRuleset",
     "Dataset",

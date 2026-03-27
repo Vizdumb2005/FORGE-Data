@@ -40,6 +40,7 @@ async def test_templates_count(client: AsyncClient, auth_headers: dict) -> None:
     templates = resp.json()
     assert isinstance(templates, list)
     assert len(templates) == 4
+    await client.delete(f"/api/v1/workspaces/{ws_id}", headers=auth_headers)
 
 
 async def test_workflow_wait_node_run_success(client: AsyncClient, auth_headers: dict) -> None:
@@ -85,6 +86,7 @@ async def test_workflow_wait_node_run_success(client: AsyncClient, auth_headers:
             break
 
     assert status == "success"
+    await client.delete(f"/api/v1/workspaces/{ws_id}", headers=auth_headers)
 
 
 async def test_from_template_creates_workflow(client: AsyncClient, auth_headers: dict) -> None:
@@ -108,4 +110,5 @@ async def test_from_template_creates_workflow(client: AsyncClient, auth_headers:
     assert body["name"] == "Daily Refresh"
     assert len(body["nodes"]) > 0
     assert len(body["edges"]) > 0
+    await client.delete(f"/api/v1/workspaces/{ws_id}", headers=auth_headers)
 

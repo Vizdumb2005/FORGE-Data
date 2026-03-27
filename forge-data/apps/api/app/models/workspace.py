@@ -13,6 +13,7 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.cell import Cell
+    from app.models.collaboration import WorkspaceChat, WorkspaceComment
     from app.models.dataset import Dataset
     from app.models.user import User
 
@@ -66,6 +67,12 @@ class Workspace(Base):
     )
     cells: Mapped[list["Cell"]] = relationship(
         "Cell", back_populates="workspace", cascade="all, delete-orphan"
+    )
+    comments: Mapped[list["WorkspaceComment"]] = relationship(
+        "WorkspaceComment", back_populates="workspace", cascade="all, delete-orphan"
+    )
+    chat_messages: Mapped[list["WorkspaceChat"]] = relationship(
+        "WorkspaceChat", back_populates="workspace", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

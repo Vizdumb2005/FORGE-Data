@@ -47,6 +47,12 @@ export interface CreateFromTemplatePayload {
   config: Record<string, unknown>;
 }
 
+export interface CreateEdgePayload {
+  source_node_id: string;
+  target_node_id: string;
+  condition: "always" | "on_success" | "on_failure";
+}
+
 type WorkflowDetailResponse = {
   id: string;
   workspace_id: string;
@@ -98,6 +104,11 @@ type WorkflowRunResponse = {
 };
 
 let workspaceIdCache: string | null = null;
+
+function toInt(value: number | undefined): number | undefined {
+  if (value === undefined || Number.isNaN(value)) return undefined;
+  return Math.round(value);
+}
 
 async function resolveWorkspaceId(): Promise<string> {
   if (workspaceIdCache) return workspaceIdCache;
@@ -235,8 +246,8 @@ export async function createWorkflowNode(workflowId: string, payload: CreateNode
     {
       node_type: toBackendNodeType(payload.type),
       label: payload.label ?? payload.type,
-      position_x: payload.position_x,
-      position_y: payload.position_y,
+      position_x: toInt(payload.position_x) ?? 0,
+      position_y: toInt(payload.position_y) ?? 0,
       config: payload.config ?? {},
     },
   );
@@ -253,8 +264,8 @@ export async function updateWorkflowNode(
     `${BASE}/${workspaceId}/workflows/${workflowId}/nodes/${nodeId}`,
     {
       label: payload.label,
-      position_x: payload.position_x,
-      position_y: payload.position_y,
+      position_x: toInt(payload.position_x),
+      position_y: toInt(payload.position_y),
       retry_count: payload.retry_count,
       timeout_seconds: payload.timeout_seconds,
       config: payload.config,
@@ -348,4 +359,18 @@ export function deriveWorkflowStatus(runStatus: string | null): AutomationWorkfl
   if (runStatus === "failed" || runStatus === "error") return "failed";
   if (runStatus === "running" || runStatus === "queued") return "running";
   return "never";
+}
+
+export async function createWorkflowEdge(workflowId: string, payload: CreateEdgePayload): Promise<AutomationEdge> {
+  const workspaceId = await resolveWorkspaceId();
+  const { data } = await api.post<WorkflowDetailResponse["edges"][number]>(
+    `${BASE}/${workspaceId}/workflows/${workflowId}/edges`,
+    payload
+  );
+  return mapEdge(data);
+}
+
+export async function deleteWorkflowEdge(workflowId: string, edgeId: string): Promise<void> {
+  const workspaceId = await resolveWorkspaceId();
+  await api.delete(`${BASE}/${workspaceId}/workflows/${workflowId}/edges/${edgeId}`);
 }

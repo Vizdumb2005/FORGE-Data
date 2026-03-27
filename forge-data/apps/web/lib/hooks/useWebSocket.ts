@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useRef } from "react";
 import { io, type Socket } from "socket.io-client";
 import { useWorkspaceStore } from "@/lib/stores/workspaceStore";
+import { getSocketBaseUrl } from "@/lib/socket";
 
 interface UseWebSocketOptions {
   workflowId: string;
+  workspaceId?: string | null;
 }
 
 type RunStartedPayload = {
@@ -26,18 +28,24 @@ type RunCompletedPayload = {
   status?: "success" | "failed" | "cancelled";
 };
 
-export function useWebSocket({ workflowId }: UseWebSocketOptions) {
+export function useWebSocket({ workflowId, workspaceId }: UseWebSocketOptions) {
   const socketRef = useRef<Socket | null>(null);
   const onRunStarted = useWorkspaceStore((s) => s.handleWorkflowRunStarted);
   const onNodeStatusChange = useWorkspaceStore((s) => s.handleWorkflowNodeStatusChange);
   const onRunCompleted = useWorkspaceStore((s) => s.handleWorkflowRunCompleted);
 
-  const authPayload = useMemo(() => ({ workflow_id: workflowId }), [workflowId]);
+  const authPayload = useMemo(
+    () => ({
+      workflow_id: workflowId,
+      workspace_id: workspaceId ?? undefined,
+    }),
+    [workflowId, workspaceId],
+  );
 
   useEffect(() => {
-    if (!workflowId) return;
+    if (!workflowId || !workspaceId) return;
 
-    const socket = io("/", {
+    const socket = io(getSocketBaseUrl(), {
       path: "/socket.io",
       transports: ["websocket", "polling"],
       withCredentials: true,
@@ -67,7 +75,7 @@ export function useWebSocket({ workflowId }: UseWebSocketOptions) {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [authPayload, onNodeStatusChange, onRunCompleted, onRunStarted, workflowId]);
+  }, [authPayload, onNodeStatusChange, onRunCompleted, onRunStarted, workflowId, workspaceId]);
 
   return {
     socketRef,

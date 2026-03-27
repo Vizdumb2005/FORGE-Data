@@ -10,6 +10,7 @@ services:
     volumes:
       - ./apps/web:/app
       - /app/node_modules
+      - /app/.next
     environment:
       - NODE_ENV=development
       - API_URL=http://api:8000
@@ -18,6 +19,7 @@ services:
       - api
     networks:
       - forge-net
+    command: sh -lc "find .next -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true; npm run dev"
     restart: unless-stopped
 
   # ── Backend API ───────────────────────────────────────────────────────────

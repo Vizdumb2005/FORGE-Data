@@ -25,15 +25,23 @@ import { useWebSocket } from "@/lib/hooks/useWebSocket";
 import { useWorkspaceStore } from "@/lib/stores/workspaceStore";
 import type { AutomationEdge, AutomationNode, Dataset } from "@/types";
 
+const EMPTY_NODE_STATUS_MAP: Record<string, "pending" | "running" | "success" | "failed" | "skipped"> = {};
+
 export default function WorkflowBuilderPage() {
   const { id } = useParams<{ id: string }>();
   const workflowId = id;
 
   const setWorkflowStatus = useWorkspaceStore((s) => s.setWorkflowStatus);
-  const nodeStatusMap = useWorkspaceStore((s) => s.workflowNodeStatusById[workflowId] ?? {});
+  const rawNodeStatusMap = useWorkspaceStore((s) => s.workflowNodeStatusById[workflowId]);
   const handleRunStarted = useWorkspaceStore((s) => s.handleWorkflowRunStarted);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspace?.id ?? null);
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const fetchWorkspaces = useWorkspaceStore((s) => s.fetchWorkspaces);
+  const fallbackWorkspaceId = workspaces[0]?.id ?? null;
+  const workspaceId = activeWorkspaceId ?? fallbackWorkspaceId;
+  const nodeStatusMap = rawNodeStatusMap ?? EMPTY_NODE_STATUS_MAP;
 
-  useWebSocket({ workflowId });
+  useWebSocket({ workflowId, workspaceId });
 
   const [loading, setLoading] = useState(true);
   const [workflowName, setWorkflowName] = useState("");
@@ -68,16 +76,26 @@ export default function WorkflowBuilderPage() {
   }, [setWorkflowStatus, workflowId]);
 
   useEffect(() => {
+    if (!workspaceId && workspaces.length === 0) {
+      void fetchWorkspaces();
+    }
+  }, [fetchWorkspaces, workspaceId, workspaces.length]);
+
+  useEffect(() => {
+    if (!workspaceId) {
+      setDatasets([]);
+      return;
+    }
     const loadDatasets = async () => {
       try {
-        const data = await listDatasets(workflowId);
+        const data = await listDatasets(workspaceId);
         setDatasets(data);
       } catch {
         setDatasets([]);
       }
     };
     void loadDatasets();
-  }, [workflowId]);
+  }, [workspaceId]);
 
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId) ?? null,
@@ -145,6 +163,9 @@ export default function WorkflowBuilderPage() {
             }}
             onNodesUpdated={setNodes}
             onNodeAdded={(node) => setNodes((prev) => [...prev, node])}
+            onEdgesUpdated={setEdges}
+            onEdgeAdded={(edge) => setEdges((prev) => [...prev, edge])}
+            onEdgeDeleted={(edgeId) => setEdges((prev) => prev.filter((e) => e.id !== edgeId))}
           />
 
           <AnimatePresence>

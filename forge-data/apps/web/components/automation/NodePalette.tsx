@@ -1,6 +1,7 @@
 "use client";
 
 import type { AutomationNodeType } from "@/types";
+import { setDraggedNodeType } from "@/lib/automation/dnd";
 
 type PaletteItem = {
   type: AutomationNodeType;
@@ -63,7 +64,9 @@ export default function NodePalette({ className }: NodePaletteProps) {
                   key={item.type}
                   draggable
                   onDragStart={(e) => {
+                    setDraggedNodeType(item.type);
                     e.dataTransfer.setData("application/forge-node-type", item.type);
+                    e.dataTransfer.setData("text/plain", item.type);
                     e.dataTransfer.effectAllowed = "copy";
                   }}
                   className="cursor-grab rounded-md border border-forge-border bg-forge-surface px-2.5 py-2 text-xs text-foreground transition hover:border-[#f97316]/50 hover:bg-[#1a1f2b]"

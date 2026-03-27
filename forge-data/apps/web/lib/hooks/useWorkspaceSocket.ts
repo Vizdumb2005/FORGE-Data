@@ -5,6 +5,7 @@ import { io, type Socket } from "socket.io-client";
 import { useWorkspaceStore } from "@/lib/stores/workspaceStore";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { useToast } from "@/components/ui/use-toast";
+import { getSocketBaseUrl } from "@/lib/socket";
 
 type PresenceUser = {
   user_id: string;
@@ -38,7 +39,7 @@ export function useWorkspaceSocket(workspaceId: string) {
   useEffect(() => {
     if (!workspaceId) return;
 
-    const socket = io("/", {
+    const socket = io(getSocketBaseUrl(), {
       path: "/socket.io",
       transports: ["websocket", "polling"],
       withCredentials: true,

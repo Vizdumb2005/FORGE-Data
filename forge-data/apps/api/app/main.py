@@ -26,6 +26,8 @@ from app.routers import (
     audit,
     auth,
     cells,
+    chat,
+    comments,
     connectors,
     datasets,
     execute,
@@ -233,6 +235,8 @@ def create_app() -> FastAPI:
     app.include_router(workspaces.router, prefix=f"{v1}/workspaces", tags=["workspaces"])
     app.include_router(datasets.router, prefix=v1, tags=["datasets"])
     app.include_router(cells.router, prefix=f"{v1}/workspaces", tags=["cells"])
+    app.include_router(comments.router, tags=["comments"])
+    app.include_router(chat.router, tags=["chat"])
     app.include_router(execute.router, prefix=f"{v1}/workspaces", tags=["execute"])
     # Backward-compatible execute prefix used by older clients/scripts.
     app.include_router(execute.router, prefix=f"{v1}/execute/workspaces", tags=["execute"])

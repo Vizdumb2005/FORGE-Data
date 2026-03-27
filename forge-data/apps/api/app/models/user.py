@@ -13,6 +13,7 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.audit_log import AuditLog
+    from app.models.collaboration import WorkspaceChat, WorkspaceComment
     from app.models.workspace import Workspace, WorkspaceMember
 
 
@@ -73,6 +74,17 @@ class User(Base):
     workspace_memberships: Mapped[list["WorkspaceMember"]] = relationship(
         "WorkspaceMember", back_populates="user", cascade="all, delete-orphan"
     )
+    comments: Mapped[list["WorkspaceComment"]] = relationship(
+        "WorkspaceComment",
+        foreign_keys="WorkspaceComment.author_id",
+        back_populates="author",
+    )
+    resolved_comments: Mapped[list["WorkspaceComment"]] = relationship(
+        "WorkspaceComment",
+        foreign_keys="WorkspaceComment.resolved_by",
+        back_populates="resolver",
+    )
+    chat_messages: Mapped[list["WorkspaceChat"]] = relationship("WorkspaceChat", back_populates="author")
     audit_logs: Mapped[list["AuditLog"]] = relationship("AuditLog", back_populates="user")
 
     def __repr__(self) -> str:

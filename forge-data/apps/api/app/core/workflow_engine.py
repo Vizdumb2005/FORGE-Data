@@ -22,6 +22,7 @@ from app.core.query_engine import FederatedQueryEngine
 from app.core.security import create_kernel_token
 from app.core.ws import ws_manager
 from app.database import AsyncSessionLocal
+from app.services.chat_service import chat_service
 from app.models.cell import Cell
 from app.models.dataset import Dataset
 from app.models.dataset_version import DatasetVersion
@@ -704,6 +705,18 @@ class OrionEngine:
                 duration_seconds = None
             workspace_id = workflow.workspace_id if workflow else None
         if workspace_id:
+            if workflow:
+                status_marker = "✓" if status == WorkflowRunStatus.success.value else "✗"
+                content = f"Workflow '{workflow.name}' completed {status_marker}"
+                metadata = {
+                    "event": "workflow_run_completed",
+                    "workflow_id": workflow_id,
+                    "run_id": run_id,
+                    "status": status,
+                }
+                async with AsyncSessionLocal() as chat_db:
+                    await chat_service.send_system_message(chat_db, workspace_id, content, metadata=metadata)
+                    await chat_db.commit()
             await self._broadcast_workflow_event(
                 workspace_id,
                 {

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 if TYPE_CHECKING:
+    from app.models.collaboration import WorkspaceComment
     from app.models.workspace import Workspace
 
 
@@ -93,6 +94,7 @@ class Cell(Base):
 
     # ── Relationships ──────────────────────────────────────────────────────
     workspace: Mapped["Workspace"] = relationship("Workspace", back_populates="cells")
+    comments: Mapped[list["WorkspaceComment"]] = relationship("WorkspaceComment", back_populates="cell")
 
     def __repr__(self) -> str:
         return (
