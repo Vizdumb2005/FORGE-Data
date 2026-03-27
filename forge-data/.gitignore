@@ -23,6 +23,7 @@ __pycache__/
 *.so
 .Python
 .venv/
+.venv311/
 venv/
 env/
 .env/
@@ -36,6 +37,7 @@ build/
 htmlcov/
 .coverage
 coverage.xml
+test_output.log
 
 # ── Data & Notebooks ──────────────────────────────────────────────────────────
 notebooks/
@@ -62,3 +64,6 @@ infra/nginx/certs/
 *.pem
 *.key
 *.crt
+
+# ── Local CLI session markers ───────────────────────────────────────────────────
+../tmpclaude-*
