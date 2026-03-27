@@ -9,6 +9,9 @@ import type {
   CellCreatePayload,
   CellUpdatePayload,
   CellOutput,
+  AutomationRunStatus,
+  AutomationWorkflowStatus,
+  AutomationNodeRunStatus,
 } from "@/types";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -64,6 +67,9 @@ interface WorkspaceState {
   typingByCell: Record<string, { user_id: string; user_name: string; color: string; char_count: number; last_seen: number }>;
   loading: boolean;
   error: string | null;
+  workflowStatusById: Record<string, AutomationWorkflowStatus>;
+  workflowActiveRunById: Record<string, string | null>;
+  workflowNodeStatusById: Record<string, Record<string, AutomationNodeRunStatus>>;
 }
 
 interface WorkspaceActions {
@@ -115,6 +121,20 @@ interface WorkspaceActions {
   setStreamingCellId: (id: string | null) => void;
 
   clearError: () => void;
+  setWorkflowStatus: (workflowId: string, status: AutomationWorkflowStatus) => void;
+  handleWorkflowRunStarted: (workflowId: string, runId: string) => void;
+  handleWorkflowNodeStatusChange: (
+    workflowId: string,
+    nodeId: string,
+    status: AutomationNodeRunStatus,
+    runId?: string,
+  ) => void;
+  handleWorkflowRunCompleted: (
+    workflowId: string,
+    runId: string,
+    status: Extract<AutomationRunStatus, "success" | "failed" | "cancelled">,
+  ) => void;
+  clearWorkflowNodeStatuses: (workflowId: string) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
@@ -135,6 +155,9 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
     typingByCell: {},
     loading: false,
     error: null,
+    workflowStatusById: {},
+    workflowActiveRunById: {},
+    workflowNodeStatusById: {},
 
     // ── Workspace CRUD ──────────────────────────────────────────────────
 
@@ -375,5 +398,39 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
     setStreamingCellId: (id) => set((s) => { s.streamingCellId = id; }),
 
     clearError: () => set((s) => { s.error = null; }),
+    setWorkflowStatus: (workflowId, status) =>
+      set((s) => {
+        s.workflowStatusById[workflowId] = status;
+      }),
+    handleWorkflowRunStarted: (workflowId, runId) =>
+      set((s) => {
+        s.workflowStatusById[workflowId] = "running";
+        s.workflowActiveRunById[workflowId] = runId;
+      }),
+    handleWorkflowNodeStatusChange: (workflowId, nodeId, status, runId) =>
+      set((s) => {
+        if (!s.workflowNodeStatusById[workflowId]) {
+          s.workflowNodeStatusById[workflowId] = {};
+        }
+        s.workflowNodeStatusById[workflowId][nodeId] = status;
+        if (runId) {
+          s.workflowActiveRunById[workflowId] = runId;
+        }
+        if (status === "running") {
+          s.workflowStatusById[workflowId] = "running";
+        }
+      }),
+    handleWorkflowRunCompleted: (workflowId, runId, status) =>
+      set((s) => {
+        if (s.workflowActiveRunById[workflowId] === runId) {
+          s.workflowActiveRunById[workflowId] = null;
+        }
+        s.workflowStatusById[workflowId] =
+          status === "success" ? "success" : "failed";
+      }),
+    clearWorkflowNodeStatuses: (workflowId) =>
+      set((s) => {
+        delete s.workflowNodeStatusById[workflowId];
+      }),
   }))
 );

@@ -438,3 +438,88 @@ export interface Page<T> {
   page: number;
   size: number;
 }
+
+// ── Automation ────────────────────────────────────────────────────────────────
+
+export type AutomationWorkflowStatus = "success" | "failed" | "running" | "never";
+export type AutomationNodeType =
+  | "code_cell"
+  | "sql_query"
+  | "upload_dataset"
+  | "trigger"
+  | "conditional"
+  | "wait"
+  | "email_notify"
+  | "api_call"
+  | "retrain"
+  | "publish_dashboard";
+
+export type AutomationEdgeType = "always" | "on_success" | "on_failure";
+export type AutomationNodeRunStatus = "pending" | "running" | "success" | "failed" | "skipped";
+export type AutomationRunStatus = "queued" | "running" | "success" | "failed" | "cancelled";
+
+export interface AutomationWorkflow {
+  id: string;
+  name: string;
+  is_active: boolean;
+  trigger_label: string | null;
+  last_run_status: AutomationWorkflowStatus;
+  run_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutomationNode {
+  id: string;
+  workflow_id: string;
+  type: AutomationNodeType;
+  label: string;
+  position_x: number;
+  position_y: number;
+  retry_count: number;
+  timeout_seconds: number;
+  on_failure: "stop" | "continue" | "branch";
+  config: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutomationEdge {
+  id: string;
+  workflow_id: string;
+  source_node_id: string;
+  target_node_id: string;
+  type: AutomationEdgeType;
+  created_at: string;
+}
+
+export interface AutomationRunSummary {
+  run_id: string;
+  workflow_id: string;
+  status: AutomationRunStatus;
+  triggered_by: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+}
+
+export interface AutomationNodeExecution {
+  node_id: string;
+  node_label: string;
+  status: AutomationNodeRunStatus;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+  log: string | null;
+}
+
+export interface AutomationRun {
+  run_id: string;
+  workflow_id: string;
+  status: AutomationRunStatus;
+  triggered_by: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number | null;
+  nodes: AutomationNodeExecution[];
+}

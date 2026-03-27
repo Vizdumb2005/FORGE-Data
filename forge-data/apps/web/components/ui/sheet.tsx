@@ -48,8 +48,9 @@ function hasSheetTitle(children: React.ReactNode): boolean {
       return;
     }
 
-    if (child.props?.children) {
-      found = hasSheetTitle(child.props.children);
+    const props = child.props as { children?: React.ReactNode };
+    if (props.children) {
+      found = hasSheetTitle(props.children);
     }
   });
 

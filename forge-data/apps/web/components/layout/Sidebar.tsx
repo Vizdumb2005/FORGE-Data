@@ -8,6 +8,7 @@ import {
   Database,
   FlaskConical,
   ScrollText,
+  Zap,
   Settings,
   LogOut,
   ChevronRight,
@@ -35,6 +36,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/datasets", label: "Datasets", icon: Database },
   { href: "/experiments", label: "Experiments", icon: FlaskConical },
+  { href: "/automation", label: "Automation", icon: Zap },
   { href: "/audit", label: "Audit Log", icon: ScrollText },
 ];
 
