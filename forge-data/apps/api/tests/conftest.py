@@ -8,7 +8,14 @@ Test database strategy:
 """
 
 import os
+import warnings
 from collections.abc import AsyncGenerator
+
+# Suppress external library deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="passlib")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="mlflow")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="crypt")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pydantic._internal")
 
 import asyncpg
 import pytest_asyncio

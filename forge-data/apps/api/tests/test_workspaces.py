@@ -84,7 +84,7 @@ async def test_update_workspace(client: AsyncClient, auth_headers: dict) -> None
 
 
 async def test_delete_workspace(client: AsyncClient, auth_headers: dict) -> None:
-    """DELETE returns 204 and workspace is gone."""
+    """DELETE returns 200 and workspace is gone."""
     create_resp = await client.post(
         "/api/v1/workspaces",
         json={"name": "To Delete"},
@@ -93,7 +93,7 @@ async def test_delete_workspace(client: AsyncClient, auth_headers: dict) -> None
     ws_id = create_resp.json()["id"]
 
     del_resp = await client.delete(f"/api/v1/workspaces/{ws_id}", headers=auth_headers)
-    assert del_resp.status_code == 204
+    assert del_resp.status_code == 200
 
     get_resp = await client.get(f"/api/v1/workspaces/{ws_id}", headers=auth_headers)
     assert get_resp.status_code == 404

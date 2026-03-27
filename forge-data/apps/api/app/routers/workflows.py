@@ -347,7 +347,7 @@ async def update(
     return WorkflowSchema.model_validate(workflow)
 
 
-@router.delete("/{id}", status_code=204, summary="Delete workflow")
+@router.delete("/{id}", status_code=200, summary="Delete workflow")
 async def delete(
     workspace_id: str,
     current_user: CurrentUser,
@@ -398,7 +398,7 @@ async def update_node(
     return WorkflowNodeSchema.model_validate(node)
 
 
-@router.delete("/{id}/nodes/{nid}", status_code=204, summary="Delete node")
+@router.delete("/{id}/nodes/{nid}", status_code=200, summary="Delete node")
 async def remove_node(
     workspace_id: str,
     nid: str,
@@ -442,7 +442,7 @@ async def add_edge(
     return WorkflowEdgeSchema.model_validate(edge)
 
 
-@router.delete("/{id}/edges/{eid}", status_code=204, summary="Delete edge")
+@router.delete("/{id}/edges/{eid}", status_code=200, summary="Delete edge")
 async def remove_edge(
     workspace_id: str,
     eid: str,

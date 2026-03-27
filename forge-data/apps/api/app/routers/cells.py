@@ -107,7 +107,7 @@ async def update_cell(
 
 @router.delete(
     "/{workspace_id}/cells/{cell_id}",
-    status_code=204,
+    status_code=200,
     summary="Delete a cell",
 )
 async def delete_cell(

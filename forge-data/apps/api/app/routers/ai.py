@@ -540,7 +540,7 @@ async def list_metrics(
 
 @router.delete(
     "/workspaces/{workspace_id}/semantic-layer/metrics/{metric_id}",
-    status_code=204,
+    status_code=200,
     response_model=None,
     response_class=Response,
     summary="Delete semantic metric",
@@ -554,7 +554,7 @@ async def delete_metric(
     await workspace_service.get_workspace(db, workspace_id, current_user.id)
     layer = SemanticLayer(db)
     await layer.delete_metric(workspace_id, metric_id)
-    return Response(status_code=204)
+    return Response(status_code=200)
 
 
 @router.post(

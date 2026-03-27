@@ -148,7 +148,7 @@ async def update_workspace(
 
 @router.delete(
     "/{workspace_id}",
-    status_code=204,
+    status_code=200,
     summary="Soft-delete a workspace",
 )
 async def delete_workspace(
@@ -264,7 +264,7 @@ async def update_member_role(
 
 @router.delete(
     "/{workspace_id}/members/{user_id}",
-    status_code=204,
+    status_code=200,
     summary="Remove a member from a workspace",
 )
 async def remove_member(

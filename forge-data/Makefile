@@ -42,8 +42,8 @@ db-revision: ## Generate a new Alembic migration (usage: make db-revision MSG="a
 	$(COMPOSE) exec api alembic -c /app/alembic.ini revision --autogenerate -m "$(MSG)"
 
 # ── Testing ───────────────────────────────────────────────────────────────────
-test-api: ## Run pytest inside the api container
-	$(COMPOSE) exec api pytest tests/ -v --tb=short
+test-api: ## Run pytest inside the api container (warnings suppressed)
+	$(COMPOSE) exec api python -W ignore::DeprecationWarning -m pytest tests/ -v --tb=short
 
 test-web: ## Run Next.js tests inside the web container
 	$(COMPOSE) exec web npm test -- --watchAll=false

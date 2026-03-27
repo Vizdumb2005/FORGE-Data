@@ -540,7 +540,7 @@ async def execute_query(
 
 @router.delete(
     "/workspaces/{workspace_id}/datasets/{dataset_id}",
-    status_code=204,
+    status_code=200,
     summary="Delete a dataset and clean up resources",
 )
 async def delete_dataset(
