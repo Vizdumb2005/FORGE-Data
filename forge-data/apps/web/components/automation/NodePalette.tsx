@@ -35,6 +35,24 @@ const GROUPS: Array<{ title: string; items: PaletteItem[] }> = [
       { type: "publish_dashboard", label: "Publish Dashboard", emoji: "📊" },
     ],
   },
+  {
+    title: "Quant & Markets",
+    items: [
+      { type: "fetch_market_data", label: "Market Data", emoji: "📈" },
+      { type: "calc_indicators", label: "Technical Indicators", emoji: "📉" },
+      { type: "backtest", label: "Run Backtest", emoji: "🧪" },
+    ],
+  },
+  {
+    title: "Execution & State",
+    items: [
+      { type: "broker_order", label: "Broker Order", emoji: "💸" },
+      { type: "portfolio_rebalance", label: "Rebalance", emoji: "⚖️" },
+      { type: "get_state", label: "Get State", emoji: "💾" },
+      { type: "set_state", label: "Set State", emoji: "📝" },
+      { type: "loop_start", label: "Loop Array", emoji: "🔁" },
+    ],
+  },
 ];
 
 interface NodePaletteProps {

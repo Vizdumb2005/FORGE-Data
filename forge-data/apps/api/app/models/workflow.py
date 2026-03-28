@@ -33,6 +33,15 @@ class WorkflowNodeType(str, Enum):
     dashboard_publish = "dashboard_publish"
     conditional = "conditional"
     wait = "wait"
+    # New Quant & State Nodes
+    fetch_market_data = "fetch_market_data"
+    calc_indicators = "calc_indicators"
+    backtest = "backtest"
+    broker_order = "broker_order"
+    portfolio_rebalance = "portfolio_rebalance"
+    loop_start = "loop_start"
+    get_state = "get_state"
+    set_state = "set_state"
 
 
 class WorkflowEdgeCondition(str, Enum):

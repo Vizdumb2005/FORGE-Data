@@ -452,7 +452,16 @@ export type AutomationNodeType =
   | "email_notify"
   | "api_call"
   | "retrain"
-  | "publish_dashboard";
+  | "publish_dashboard"
+  // New Quant & State Nodes:
+  | "fetch_market_data"
+  | "calc_indicators"
+  | "backtest"
+  | "broker_order"
+  | "portfolio_rebalance"
+  | "loop_start"
+  | "get_state"
+  | "set_state";
 
 export type AutomationEdgeType = "always" | "on_success" | "on_failure";
 export type AutomationNodeRunStatus = "pending" | "running" | "success" | "failed" | "skipped";

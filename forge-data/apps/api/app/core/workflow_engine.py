@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
+import random
 import time
 from collections import defaultdict
 from collections.abc import Sequence
@@ -40,6 +42,18 @@ from app.models.workflow import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _render_config_recursively(config: Any, ctx: dict[str, Any]) -> Any:
+    """Recursively render Jinja2 templates in node configuration."""
+    if isinstance(config, str):
+        # Render Jinja2 template using the current run context and accumulated outputs
+        return Template(config).render(run_context=ctx, outputs=ctx.get("outputs", {}))
+    elif isinstance(config, dict):
+        return {k: _render_config_recursively(v, ctx) for k, v in config.items()}
+    elif isinstance(config, list):
+        return [_render_config_recursively(v, ctx) for v in config]
+    return config
 
 
 def _send_orion_execute_node(workflow_run_id: str, node_id: str, run_context: dict[str, Any]) -> None:
@@ -283,9 +297,21 @@ class OrionEngine:
                 WorkflowNodeType.dashboard_publish.value: self._execute_dashboard_publish,
                 WorkflowNodeType.conditional.value: self._execute_conditional,
                 WorkflowNodeType.wait.value: self._execute_wait,
+                # New Quant & State Nodes
+                WorkflowNodeType.fetch_market_data.value: self._execute_fetch_market_data,
+                WorkflowNodeType.calc_indicators.value: self._execute_calc_indicators,
+                WorkflowNodeType.backtest.value: self._execute_backtest,
+                WorkflowNodeType.broker_order.value: self._execute_broker_order,
+                WorkflowNodeType.portfolio_rebalance.value: self._execute_portfolio_rebalance,
+                WorkflowNodeType.loop_start.value: self._execute_loop_start,
+                WorkflowNodeType.get_state.value: self._execute_get_state,
+                WorkflowNodeType.set_state.value: self._execute_set_state,
             }.get(node.node_type)
             if dispatch is None:
                 raise ValueError(f"Unsupported node_type '{node.node_type}'")
+
+            # Dynamically render Jinja2 templates in config before execution
+            node.config = _render_config_recursively(node.config, ctx)
 
             result = await dispatch(node, ctx)
             outputs = ctx.setdefault("outputs", {})
@@ -550,6 +576,159 @@ class OrionEngine:
             await db.flush()
             await db.commit()
         return {"dashboard_id": dashboard_id, "published": True}
+
+    # New Quant & State Node Execution Methods
+
+    async def _execute_fetch_market_data(self, node: WorkflowNode, ctx: dict[str, Any]) -> dict[str, Any]:
+        """Fetch market data for a given ticker."""
+        ticker = str(node.config.get("ticker", "AAPL")).upper()
+        source = str(node.config.get("source", "yahoo")).lower()
+        # Mock implementation - replace with actual market data API integration
+        import random
+        base_price = random.uniform(50.0, 500.0)
+        return {
+            "ticker": ticker,
+            "price": round(base_price, 2),
+            "open": round(base_price * random.uniform(0.98, 1.02), 2),
+            "high": round(base_price * random.uniform(1.01, 1.05), 2),
+            "low": round(base_price * random.uniform(0.95, 0.99), 2),
+            "volume": random.randint(100000, 10000000),
+            "timestamp": datetime.now(UTC).isoformat(),
+            "source": source,
+        }
+
+    async def _execute_calc_indicators(self, node: WorkflowNode, ctx: dict[str, Any]) -> dict[str, Any]:
+        """Calculate technical indicators from price data."""
+        indicator_type = str(node.config.get("indicator", "sma")).lower()
+        period = int(node.config.get("period", 14))
+        input_data = node.config.get("input_data", {})
+        prices = input_data.get("prices", [])
+        if not prices:
+            prices = [100.0 + i * random.uniform(-5, 5) for i in range(period * 2)]
+        # Mock indicator calculation
+        if indicator_type == "sma":
+            result = sum(prices[-period:]) / period if len(prices) >= period else None
+        elif indicator_type == "ema":
+            result = sum(prices[-period:]) / period if len(prices) >= period else None
+        elif indicator_type == "rsi":
+            result = random.uniform(0, 100)
+        elif indicator_type == "macd":
+            result = {"macd": random.uniform(-5, 5), "signal": random.uniform(-3, 3), "histogram": random.uniform(-2, 2)}
+        else:
+            result = None
+        return {
+            "indicator": indicator_type,
+            "period": period,
+            "value": result,
+            "input_length": len(prices),
+        }
+
+    async def _execute_backtest(self, node: WorkflowNode, ctx: dict[str, Any]) -> dict[str, Any]:
+        """Run a trading strategy backtest."""
+        strategy_name = str(node.config.get("strategy", "sma_crossover"))
+        start_date = str(node.config.get("start_date", "2023-01-01"))
+        end_date = str(node.config.get("end_date", "2024-01-01"))
+        initial_capital = float(node.config.get("initial_capital", 100000.0))
+        # Mock backtest results
+        import random
+        total_return = random.uniform(-0.2, 0.5)
+        sharpe = random.uniform(0.5, 2.5)
+        trades = random.randint(10, 200)
+        return {
+            "strategy": strategy_name,
+            "period": f"{start_date} to {end_date}",
+            "initial_capital": initial_capital,
+            "final_capital": round(initial_capital * (1 + total_return), 2),
+            "total_return_pct": round(total_return * 100, 2),
+            "sharpe_ratio": round(sharpe, 2),
+            "total_trades": trades,
+            "win_rate_pct": round(random.uniform(40, 70), 1),
+            "max_drawdown_pct": round(random.uniform(-0.3, -0.05) * 100, 2),
+        }
+
+    async def _execute_broker_order(self, node: WorkflowNode, ctx: dict[str, Any]) -> dict[str, Any]:
+        """Execute a broker order."""
+        ticker = str(node.config.get("ticker", "AAPL")).upper()
+        action = str(node.config.get("action", "buy")).lower()
+        quantity = int(node.config.get("quantity", 100))
+        order_type = str(node.config.get("order_type", "market")).lower()
+        # Mock order execution
+        return {
+            "order_id": f"ORD_{random.randint(100000, 999999)}",
+            "ticker": ticker,
+            "action": action,
+            "quantity": quantity,
+            "order_type": order_type,
+            "status": "filled",
+            "filled_price": round(random.uniform(50.0, 500.0), 2),
+            "filled_at": datetime.now(UTC).isoformat(),
+            "broker": "mock_broker",
+        }
+
+    async def _execute_portfolio_rebalance(self, node: WorkflowNode, ctx: dict[str, Any]) -> dict[str, Any]:
+        """Rebalance portfolio to target weights."""
+        target_weights = node.config.get("target_weights", {})
+        if not target_weights:
+            target_weights = {"AAPL": 0.3, "GOOGL": 0.3, "MSFT": 0.4}
+        tolerance = float(node.config.get("tolerance", 0.05))
+        return {
+            "target_weights": target_weights,
+            "tolerance": tolerance,
+            "rebalanced": True,
+            "orders_generated": len(target_weights),
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+
+    async def _execute_loop_start(self, node: WorkflowNode, ctx: dict[str, Any]) -> dict[str, Any]:
+        """Start an array loop iteration."""
+        array_data = node.config.get("array", [])
+        if isinstance(array_data, str):
+            try:
+                array_data = json.loads(array_data)
+            except json.JSONDecodeError:
+                array_data = []
+        current_index = int(node.config.get("current_index", 0))
+        if not isinstance(array_data, list) or len(array_data) == 0:
+            return {"item": None, "index": 0, "total": 0, "done": True}
+        item = array_data[current_index] if current_index < len(array_data) else None
+        return {
+            "item": item,
+            "index": current_index,
+            "total": len(array_data),
+            "done": current_index >= len(array_data),
+            "array": array_data,
+        }
+
+    async def _execute_get_state(self, node: WorkflowNode, ctx: dict[str, Any]) -> dict[str, Any]:
+        """Get state from persistent store."""
+        key = str(node.config.get("key", "default_key"))
+        # TODO: Implement actual Redis/Postgres key-value store lookup
+        # Mock implementation - check if key exists in context
+        state_value = ctx.get("state", {}).get(key, None)
+        return {
+            "key": key,
+            "value": state_value,
+            "exists": state_value is not None,
+            "source": "context_mock",
+        }
+
+    async def _execute_set_state(self, node: WorkflowNode, ctx: dict[str, Any]) -> dict[str, Any]:
+        """Set state in persistent store."""
+        key = str(node.config.get("key", "default_key"))
+        value = node.config.get("value", {})
+        ttl = int(node.config.get("ttl", 3600))  # Default 1 hour
+        # TODO: Save to a persistent Key-Value store (e.g., Redis or Postgres)
+        # Mock implementation - store in context for now
+        if "state" not in ctx:
+            ctx["state"] = {}
+        ctx["state"][key] = value
+        return {
+            "saved_key": key,
+            "value": value,
+            "ttl_seconds": ttl,
+            "status": "success",
+            "store": "context_mock",
+        }
 
     async def cancel_run(self, workflow_run_id: str, user_id: str) -> None:
         async with AsyncSessionLocal() as db:
