@@ -357,6 +357,7 @@ class FederatedQueryEngine:
 
         def _do() -> None:
             import json
+
             from google.cloud import bigquery
             from google.oauth2 import service_account
 
@@ -371,8 +372,8 @@ class FederatedQueryEngine:
                 client = bigquery.Client(project=project_id)
 
             query = f"SELECT * FROM `{project_id}.{dataset_id}.{table}`"
-            df = client.query(query).to_dataframe()
-            conn.execute(f'CREATE OR REPLACE TABLE "{name}" AS SELECT * FROM df')
+            _df = client.query(query).to_dataframe()
+            conn.execute(f'CREATE OR REPLACE TABLE "{name}" AS SELECT * FROM _df')
 
         await asyncio.to_thread(_do)
 

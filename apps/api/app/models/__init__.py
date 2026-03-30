@@ -32,9 +32,6 @@ __all__ = [
     "Cell",
     "CellLanguage",
     "CellType",
-    "WorkspaceComment",
-    "WorkspaceChat",
-    "WorkspaceChatContentType",
     "DataQualityReport",
     "DataQualityRuleset",
     "Dataset",
@@ -66,5 +63,8 @@ __all__ = [
     "WorkflowRunTriggeredBy",
     "WorkflowTriggerType",
     "Workspace",
+    "WorkspaceChat",
+    "WorkspaceChatContentType",
+    "WorkspaceComment",
     "WorkspaceMember",
 ]

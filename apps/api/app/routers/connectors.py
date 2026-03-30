@@ -799,7 +799,7 @@ def _build_duckdb_config(source_type: SourceType, config: dict[str, Any]) -> dic
             "schema_name": config.get("schema_name", "PUBLIC"),
             "table": config.get("table", ""),
         }
-        
+
     if st == "bigquery":
         return {
             "type": "bigquery",

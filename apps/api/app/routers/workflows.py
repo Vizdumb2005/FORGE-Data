@@ -18,8 +18,8 @@ from app.core.exceptions import (
     NotFoundException,
     ValidationError,
 )
-from app.core.workflow_templates import get_workflow_templates, instantiate_template
 from app.core.workflow_engine import OrionEngine
+from app.core.workflow_templates import get_workflow_templates, instantiate_template
 from app.dependencies import CurrentUser, DBSession
 from app.models.workflow import (
     Workflow,

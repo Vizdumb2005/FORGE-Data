@@ -12,17 +12,17 @@ import socket
 import warnings
 from collections.abc import AsyncGenerator
 
-# Suppress external library deprecation warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="passlib")
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="mlflow")
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="crypt")
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="pydantic._internal")
-
 import asyncpg
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+# Suppress external library deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="passlib")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="mlflow")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="crypt")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pydantic._internal")
 
 # ── Override settings before importing anything from app ──────────────────────
 _PG_USER = os.getenv("POSTGRES_USER", "forge")

@@ -42,7 +42,7 @@ class WorkspaceCommentRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     author: WorkspaceCommentAuthor | None = None
-    replies: list["WorkspaceCommentRead"] = []
+    replies: list[WorkspaceCommentRead] = []
 
 
 class WorkspaceChatCreate(BaseModel):

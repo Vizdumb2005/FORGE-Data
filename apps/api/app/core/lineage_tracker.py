@@ -290,7 +290,7 @@ class LineageTracker:
                 in_degree[edge.target_node_id] += 1
 
         queue = deque([node_id for node_id, deg in in_degree.items() if deg == 0])
-        layers: dict[str, int] = {node_id: 0 for node_id in in_degree}
+        layers: dict[str, int] = dict.fromkeys(in_degree, 0)
         while queue:
             current = queue.popleft()
             for nxt in outgoing.get(current, []):

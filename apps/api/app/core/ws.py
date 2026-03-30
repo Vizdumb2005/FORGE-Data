@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+
 class WorkspaceWebSocketManager:
     async def broadcast_to_workspace(self, workspace_id: str, message: dict[str, Any]) -> None:
         event_type = str(message.get("type") or "").strip()

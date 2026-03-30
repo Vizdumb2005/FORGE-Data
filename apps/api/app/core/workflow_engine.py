@@ -24,7 +24,6 @@ from app.core.query_engine import FederatedQueryEngine
 from app.core.security import create_kernel_token
 from app.core.ws import ws_manager
 from app.database import AsyncSessionLocal
-from app.services.chat_service import chat_service
 from app.models.cell import Cell
 from app.models.dataset import Dataset
 from app.models.dataset_version import DatasetVersion
@@ -40,6 +39,7 @@ from app.models.workflow import (
     WorkflowRun,
     WorkflowRunStatus,
 )
+from app.services.chat_service import chat_service
 
 logger = logging.getLogger(__name__)
 
@@ -606,9 +606,7 @@ class OrionEngine:
         if not prices:
             prices = [100.0 + i * random.uniform(-5, 5) for i in range(period * 2)]
         # Mock indicator calculation
-        if indicator_type == "sma":
-            result = sum(prices[-period:]) / period if len(prices) >= period else None
-        elif indicator_type == "ema":
+        if indicator_type == "sma" or indicator_type == "ema":
             result = sum(prices[-period:]) / period if len(prices) >= period else None
         elif indicator_type == "rsi":
             result = random.uniform(0, 100)

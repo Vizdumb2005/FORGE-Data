@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import and_, select
 
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 class ForgeEventBus:
-    EVENTS = {
+    EVENTS: ClassVar[set[str]] = {
         "dataset.version_created",
         "dataset.quality_check_failed",
         "dataset.quality_check_passed",
@@ -72,7 +72,7 @@ class ForgeEventBus:
             await pubsub.unsubscribe("forge:events")
             await pubsub.close()
 
-    async def _dispatch_event(self, engine: "OrionEngine", event_type: str, payload: dict[str, Any]) -> None:
+    async def _dispatch_event(self, engine: OrionEngine, event_type: str, payload: dict[str, Any]) -> None:
         dataset_id = payload.get("dataset_id")
         workspace_id = payload.get("workspace_id")
         async with AsyncSessionLocal() as db:

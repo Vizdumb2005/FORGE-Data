@@ -7,7 +7,6 @@ from http.cookies import SimpleCookie
 from typing import Any
 
 import socketio
-from sqlalchemy import select
 
 from app.config import settings
 from app.core.security import verify_token

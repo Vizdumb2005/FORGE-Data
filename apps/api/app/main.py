@@ -13,8 +13,8 @@ from socketio import ASGIApp
 from sqlalchemy import text
 
 from app.config import settings
-from app.core.exceptions import ForgeException
 from app.core.event_bus import event_bus
+from app.core.exceptions import ForgeException
 from app.core.experiment_tracker import ExperimentTracker
 from app.core.kernel_manager import KernelManager
 from app.core.middleware import AuditMiddleware, RequestLoggingMiddleware

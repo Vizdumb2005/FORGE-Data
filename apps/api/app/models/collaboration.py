@@ -80,16 +80,16 @@ class WorkspaceComment(Base):
         nullable=False,
     )
 
-    workspace: Mapped["Workspace"] = relationship("Workspace", back_populates="comments")
-    cell: Mapped["Cell | None"] = relationship("Cell", back_populates="comments")
-    author: Mapped["User"] = relationship("User", foreign_keys=[author_id], back_populates="comments")
-    resolver: Mapped["User | None"] = relationship(
+    workspace: Mapped[Workspace] = relationship("Workspace", back_populates="comments")
+    cell: Mapped[Cell | None] = relationship("Cell", back_populates="comments")
+    author: Mapped[User] = relationship("User", foreign_keys=[author_id], back_populates="comments")
+    resolver: Mapped[User | None] = relationship(
         "User", foreign_keys=[resolved_by], back_populates="resolved_comments"
     )
-    parent_comment: Mapped["WorkspaceComment | None"] = relationship(
+    parent_comment: Mapped[WorkspaceComment | None] = relationship(
         "WorkspaceComment", remote_side=[id], back_populates="replies"
     )
-    replies: Mapped[list["WorkspaceComment"]] = relationship(
+    replies: Mapped[list[WorkspaceComment]] = relationship(
         "WorkspaceComment", back_populates="parent_comment", cascade="all, delete-orphan"
     )
 
@@ -127,6 +127,6 @@ class WorkspaceChat(Base):
         nullable=False,
     )
 
-    workspace: Mapped["Workspace"] = relationship("Workspace", back_populates="chat_messages")
-    author: Mapped["User | None"] = relationship("User", back_populates="chat_messages")
+    workspace: Mapped[Workspace] = relationship("Workspace", back_populates="chat_messages")
+    author: Mapped[User | None] = relationship("User", back_populates="chat_messages")
 

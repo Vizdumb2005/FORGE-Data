@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import os
+import uuid as _uuid
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
@@ -12,14 +15,14 @@ from fastapi import APIRouter, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.code_generator import CodeGenerator, WorkspaceContext
 from app.core.exceptions import NotFoundException
-from app.core.llm_provider import LLMProvider, ProviderRegistry
-from app.core.realtime import realtime_manager
+from app.core.llm_provider import LLMProvider, ProviderRegistry, _normalise_base_url
+from app.core.pipeline_engine import AgenticPipelineEngine
 from app.core.semantic_layer import SemanticLayer
 from app.core.stat_advisor import StatisticalAdvisor
-from app.core.pipeline_engine import AgenticPipelineEngine
 from app.dependencies import CurrentUser, DBSession, KernelMgr
 from app.models.cell import Cell
 from app.models.dataset import Dataset
@@ -116,9 +119,6 @@ async def list_provider_models(provider_id: str, current_user: CurrentUser) -> d
     - ollama      → GET /api/tags
     - openai_compatible (llama_cpp, gpt4all, vllm) → GET /v1/models
     """
-    import os
-    from app.core.llm_provider import _normalise_base_url
-
     spec = provider_registry.providers.get(provider_id)
     if spec is None:
         return {"models": [], "error": f"Unknown provider '{provider_id}'"}
@@ -171,9 +171,7 @@ async def generate_code(
     # Determine target cell — create one immediately if auto_cell is set
     target_cell_id = payload.cell_id
     if payload.auto_cell and not target_cell_id:
-        from app.models.cell import Cell as CellModel
-        import uuid as _uuid
-        new_cell = CellModel(
+        new_cell = Cell(
             id=str(_uuid.uuid4()),
             workspace_id=workspace_id,
             cell_type="code" if payload.language != "sql" else "sql",
@@ -214,15 +212,13 @@ async def generate_code(
 
             # Generate a brief summary of what was written
             summary = ""
-            try:
+            with contextlib.suppress(Exception):
                 summary = await code_generator.summarise_code(
                     user=current_user,
                     code=full_code,
                     prompt=payload.prompt,
                     language=payload.language,
                 )
-            except Exception:
-                pass
 
             yield _sse({
                 "type": "complete",
@@ -713,11 +709,11 @@ async def approve_agent_action(
 ) -> dict[str, Any]:
     await workspace_service.get_workspace(db, workspace_id, current_user.id)
     engine = get_agent_engine(db, kernel_mgr)
-    
+
     queue = engine._approval_queues.get(workspace_id)
     if not queue:
         raise NotFoundException("PendingApproval", workspace_id)
-    
+
     await queue.put(payload.approved)
     return {"status": "ok", "workspace_id": workspace_id, "approved": payload.approved}
 

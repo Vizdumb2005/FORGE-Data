@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, TypedDict, Literal
+from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import select
@@ -42,7 +42,7 @@ class AgentTool(TypedDict):
 class AgentToolRegistry:
     """Registry of platform tools available to the agent."""
 
-    def __init__(self, engine: "AgenticPipelineEngine") -> None:
+    def __init__(self, engine: AgenticPipelineEngine) -> None:
         self.engine = engine
         self.tools: dict[str, AgentTool] = {
             "read_cells": {
@@ -107,7 +107,8 @@ class AgentToolRegistry:
     async def _inspect_schema(self, state: PipelineState) -> dict[str, Any]:
         from app.services import dataset_service
         dataset_id = state.get("last_args", {}).get("dataset_id")
-        if not dataset_id: return {"error": "Missing dataset_id"}
+        if not dataset_id:
+            return {"error": "Missing dataset_id"}
         dataset = await dataset_service.get_dataset(self.engine.db, state["workspace_id"], dataset_id)
         return {"current_output": dataset.schema_snapshot}
 
@@ -118,10 +119,12 @@ class AgentToolRegistry:
 
     async def _execute_cell(self, state: PipelineState) -> dict[str, Any]:
         cell_id = state.get("last_args", {}).get("cell_id")
-        if not cell_id: return {"error": "Missing cell_id"}
+        if not cell_id:
+            return {"error": "Missing cell_id"}
         result = await self.engine.db.execute(select(Cell).where(Cell.id == cell_id))
         cell = result.scalar_one_or_none()
-        if not cell: return {"error": f"Cell {cell_id} not found"}
+        if not cell:
+            return {"error": f"Cell {cell_id} not found"}
         out = await self.engine._execute_cell(state["workspace_id"], cell)
         return {"current_output": out}
 
@@ -422,7 +425,6 @@ class AgenticPipelineEngine:
             """Reasoning step before taking action."""
             idx = state["current_step_index"]
             step_text = state["steps"][idx]
-            ws_id = state["workspace_id"]
 
             prompt = (
                 "You are an autonomous data scientist. Reason about the current state "
@@ -575,7 +577,6 @@ class AgenticPipelineEngine:
             step_results = [*state.get("step_results", [])]
             idx = state["current_step_index"]
             cell_id = state.get("current_cell_id", "")
-            ws_id = state["workspace_id"]
 
             step_results.append({
                 "step_name": state["steps"][idx],
@@ -770,10 +771,9 @@ class AgenticPipelineEngine:
             """Decide which tool to use for the current step."""
             idx = state["current_step_index"]
             step_text = state["steps"][idx]
-            ws_id = state["workspace_id"]
-            
+
             # Simple heuristic mapping for now, or use LLM to pick tool
-            # For this version, we mostly use 'write_code' which maps to our code_writer 
+            # For this version, we mostly use 'write_code' which maps to our code_writer
             # OR 'delete_dataset' etc based on keywords.
             lower = step_text.lower()
             tool_name = "write_code"
@@ -781,7 +781,7 @@ class AgenticPipelineEngine:
                 tool_name = "delete_dataset"
             elif "schema" in lower or "inspect" in lower:
                 tool_name = "inspect_schema"
-            
+
             return {**state, "pending_tool": tool_name}
 
         async def tool_executor(state: PipelineState) -> PipelineState:
@@ -807,7 +807,7 @@ class AgenticPipelineEngine:
                     "args": {"step": state["steps"][idx]},
                     "ledger": engine.ledger.snapshot(),
                 })
-                
+
                 # Wait for approval from queue
                 queue = engine._approval_queues.get(ws_id)
                 if queue:
@@ -851,7 +851,7 @@ class AgenticPipelineEngine:
         graph.add_edge("planner", "thinker")
         graph.add_edge("thinker", "orchestrator")
         graph.add_edge("orchestrator", "tool_executor")
-        
+
         graph.add_conditional_edges(
             "tool_executor",
             route_after_executor,
@@ -863,7 +863,7 @@ class AgenticPipelineEngine:
             {"executor": "executor", "evaluator": "evaluator"},
         )
         # For error retries, we usually retry the executor
-        graph.add_edge("executor", "evaluator") 
+        graph.add_edge("executor", "evaluator")
 
         graph.add_conditional_edges(
             "evaluator",
@@ -883,7 +883,7 @@ class AgenticPipelineEngine:
         # Set up approval queue
         queue = asyncio.Queue()
         self._approval_queues[workspace_id] = queue
-        
+
         try:
             pipeline = Pipeline(
                 workspace_id=workspace_id,
