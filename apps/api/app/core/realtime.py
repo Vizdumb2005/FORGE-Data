@@ -9,6 +9,7 @@ from typing import Any
 import socketio
 from sqlalchemy import select
 
+from app.config import settings
 from app.core.security import verify_token
 from app.database import AsyncSessionLocal
 from app.models.user import User
@@ -18,7 +19,7 @@ from app.services.workspace_service import check_workspace_role
 
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins="*",
+    cors_allowed_origins=settings.cors_origin_list,
     logger=False,
 )
 
@@ -262,4 +263,3 @@ def _extract_cookie_token(environ: dict[str, Any]) -> str | None:
     cookie.load(cookie_header)
     token = cookie.get("forge_access_token")
     return token.value if token else None
-
