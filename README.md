@@ -1,4 +1,4 @@
-# FORGE Data - Open Source Data Intelligence Platform
+# FORGE Data: Open-Source Data Intelligence Platform for AI Analytics
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](./docker-compose.yml)
@@ -7,11 +7,13 @@
 
 **FORGE Data** is an open-source, self-hosted data intelligence platform for interactive analytics, AI-assisted data exploration, and modern data workflows. It combines a spreadsheet-style interface with conversational AI analysis, built for data analysts, data scientists, and engineering teams that need full control over their data and AI stack.
 
+If you're looking for a private alternative to cloud BI tools, AI data copilots, and notebook-heavy analytics stacks, FORGE Data gives you a unified self-hosted workspace for SQL, Python, dashboards, and LLM-powered analysis.
+
 > **Bring Your Own Key (BYOK):** FORGE Data never stores your LLM API keys on external servers. All keys are encrypted at rest in your own database. Works with OpenAI, Anthropic, Google AI, Azure OpenAI, and local Ollama models.
 
 ---
 
-## Architecture
+## Platform Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -43,7 +45,7 @@
 
 ---
 
-## Features
+## Key Features for Data Analytics and AI Workflows
 
 - **Interactive Data Grid** — Spreadsheet-like interface with live Python/SQL cell execution via Jupyter kernels
 - **Conversational AI Analysis** — Chat with your data using any LLM provider (BYOK)
@@ -58,7 +60,7 @@
 
 ---
 
-## Quick Start
+## Quick Start: Run FORGE Data Locally with Docker
 
 ### Prerequisites
 
@@ -132,7 +134,7 @@ make shell-db      # psql into PostgreSQL
 
 ---
 
-## Self-Hosting
+## Self-Hosting FORGE Data
 
 ### Docker Compose (Recommended for single server)
 
@@ -165,7 +167,7 @@ All inference happens directly from your server to the LLM provider.
 
 ---
 
-## Project Structure
+## Repository Structure
 
 ```
 FORGE-Data/
