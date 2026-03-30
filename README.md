@@ -1,11 +1,11 @@
-# FORGE Data
+# FORGE Data - Open Source Data Intelligence Platform
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](./docker-compose.yml)
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)](./apps/api)
 [![Next.js](https://img.shields.io/badge/next.js-15-000000?logo=next.js&logoColor=white)](./apps/web)
 
-**FORGE Data** is an open-source, self-hosted data intelligence platform that combines the interactive spreadsheet experience of Quadratic AI with the conversational data analysis of Julius AI. Built for data analysts and scientists who want full control over their data and AI stack.
+**FORGE Data** is an open-source, self-hosted data intelligence platform for interactive analytics, AI-assisted data exploration, and modern data workflows. It combines a spreadsheet-style interface with conversational AI analysis, built for data analysts, data scientists, and engineering teams that need full control over their data and AI stack.
 
 > **Bring Your Own Key (BYOK):** FORGE Data never stores your LLM API keys on external servers. All keys are encrypted at rest in your own database. Works with OpenAI, Anthropic, Google AI, Azure OpenAI, and local Ollama models.
 
@@ -69,8 +69,8 @@
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-org/forge-data.git
-cd forge-data
+git clone https://github.com/Vizdumb2005/FORGE-Data.git
+cd FORGE-Data
 ```
 
 ### 2. Configure environment
@@ -137,8 +137,8 @@ make shell-db      # psql into PostgreSQL
 ### Docker Compose (Recommended for single server)
 
 ```bash
-git clone https://github.com/your-org/forge-data
-cd forge-data
+git clone https://github.com/Vizdumb2005/FORGE-Data.git
+cd FORGE-Data
 cp .env.example .env
 # Edit .env with your values (JWT_SECRET, strong DB password, etc.)
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
@@ -168,7 +168,7 @@ All inference happens directly from your server to the LLM provider.
 ## Project Structure
 
 ```
-forge-data/
+FORGE-Data/
 ├── apps/
 │   ├── web/                  # Next.js 15 frontend (App Router)
 │   └── api/                  # FastAPI Python backend
@@ -194,7 +194,7 @@ forge-data/
 
 We welcome contributions! Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a PR.
 
-- **Bug reports:** [Open an issue](https://github.com/your-org/forge-data/issues)
+- **Bug reports:** [Open an issue](https://github.com/Vizdumb2005/FORGE-Data/issues)
 - **Feature requests:** Start a discussion before implementing
 - **Security issues:** Email security@forge-data.dev (do not open public issues)
 
