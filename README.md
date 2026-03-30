@@ -11,6 +11,29 @@ If you're looking for a private alternative to cloud BI tools, AI data copilots,
 
 > **Bring Your Own Key (BYOK):** FORGE Data never stores your LLM API keys on external servers. All keys are encrypted at rest in your own database. Works with OpenAI, Anthropic, Google AI, Azure OpenAI, and local Ollama models.
 
+## Why FORGE Data
+
+FORGE Data helps teams run secure, self-hosted analytics with AI: connect data sources, query with SQL and Python, and collaborate in one private workspace. It is designed for organizations that need modern AI analytics without sending sensitive data to third-party SaaS platforms.
+
+### Best for
+
+- Self-hosted business intelligence and private analytics platforms
+- AI-assisted data analysis with BYOK LLM providers
+- Data science and analytics teams needing SQL + Python in one interface
+- Engineering teams building governed internal data tools
+
+## Table of Contents
+
+- [Platform Architecture](#platform-architecture)
+- [Key Features for Data Analytics and AI Workflows](#key-features-for-data-analytics-and-ai-workflows)
+- [Quick Start: Run FORGE Data Locally with Docker](#quick-start-run-forge-data-locally-with-docker)
+- [Development Commands](#development-commands)
+- [Self-Hosting FORGE Data](#self-hosting-forge-data)
+- [Repository Structure](#repository-structure)
+- [FAQ](#faq)
+- [Contributing](#contributing)
+- [License](#license)
+
 ---
 
 ## Platform Architecture
@@ -189,6 +212,26 @@ FORGE-Data/
 ├── Makefile                  # Convenience commands
 └── notebooks/                # Jupyter notebook workspace (gitignored)
 ```
+
+---
+
+## FAQ
+
+### What is FORGE Data?
+
+FORGE Data is an open-source data intelligence platform for self-hosted analytics, combining SQL, Python, and LLM-powered analysis in a collaborative web interface.
+
+### Is FORGE Data self-hosted?
+
+Yes. FORGE Data is built for self-hosting with Docker Compose and Kubernetes support.
+
+### Which AI providers are supported?
+
+FORGE Data supports OpenAI, Anthropic, Google AI, Azure OpenAI, and local Ollama models with BYOK.
+
+### Can I use FORGE Data for private or regulated data?
+
+Yes. FORGE Data is designed for privacy-focused deployments where data and keys stay in your infrastructure.
 
 ---
 
